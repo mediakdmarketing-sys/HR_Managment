@@ -1,0 +1,18 @@
+name,email,department,status,workingHours,totalBreakTime,monthlyTotalWorkingHours
+Vijay Anand,vijay.anand@example.com,Software,Present,8.5,1,240
+Harish Kumar,harish.kumar@example.com,Software,Absent,0,0,168
+Deepak Raj,deepak.raj@example.com,Digital Marketing,Present,7.5,0.5,225
+Swetha Devi,swetha.devi@example.com,HR,Present,8,1,232
+Manoj,manoj@example.com,Software,Present,6.5,0.5,255
+Revathi,revathi@example.com,Digital Marketing,Absent,0,0,176
+Yogesh,yogesh@example.com,HR,Present,9,1.5,248
+Priya Dharshini,priya.dharshini@example.com,Software,Present,7,1,220
+Santhosh,santhosh@example.com,Digital Marketing,Present,8.5,1,260
+Divya,divya@example.com,HR,Absent,0,0.5,160
+Kannan,kannan@example.com,Software,Present,5.5,0.5,198
+Ramya,ramya@example.com,Digital Marketing,Present,7.5,1,230
+Ashwin,ashwin@example.com,HR,Present,8,1,240
+Keerthana,keerthana@example.com,Software,Absent,0,0,180
+Mohan,mohan@example.com,Digital Marketing,Present,6,0.5,205
+Mano,mohan@example.com,Digital Marketing,Present,6,0.5,205
+

@@ -3,10 +3,9 @@ import { Ticket, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/authApi";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import mockEmployees from "../assets/mockEmployees";
 
 export default function Login() {
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
@@ -34,16 +33,28 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const response = await loginUser({
-        email: formData.email,
-        password: formData.password,
-      });
+      const mockUser = mockEmployees.find(
+        (employee) =>
+          employee.email.toLowerCase() === formData.email.trim().toLowerCase() &&
+          employee.password === formData.password
+      );
 
-      localStorage.setItem("token", response.data.data.token);
+      if (mockUser) {
+        const userWithoutPassword = { ...mockUser };
+        delete userWithoutPassword.password;
+        localStorage.setItem("token", `mock-token-${mockUser.id}`);
+        localStorage.setItem("user", JSON.stringify(userWithoutPassword));
+      } else {
+        const response = await loginUser({
+          email: formData.email,
+          password: formData.password,
+        });
 
-      localStorage.setItem("user", JSON.stringify(response.data.data.user));
+        localStorage.setItem("token", response.data.data.token);
+        localStorage.setItem("user", JSON.stringify(response.data.data.user));
+      }
 
-      toast.success("Welcome to TicketHub", { theme: "dark" });
+      toast.success("Welcome to HR Management", { theme: "dark" });
 
       navigate("/dashboard");
     } catch (err) {

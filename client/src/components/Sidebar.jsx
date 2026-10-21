@@ -1,13 +1,18 @@
 import { useState } from "react";
 import {
   LayoutDashboard,
-  PlusCircle,
-  Ticket,
-  User,
   LogOut,
   Menu,
   X,
-  SquareDashedKanban,Timer,ChartSpline ,FolderOutput ,CreditCard ,IdCardLanyard  
+  SquareDashedKanban,
+  Timer,
+  ChartSpline,
+  FolderOutput,
+  CreditCard,
+  IdCardLanyard,
+  UserRoundCog,
+  UserRoundSearch,
+  UsersRound,
 } from "lucide-react";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -20,6 +25,7 @@ const Sidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
 
   const logout = async () => {
     try {
@@ -33,6 +39,9 @@ const Sidebar = () => {
       navigate("/login");
     }
   };
+
+  const requestLogout = () => setIsLogoutDialogOpen(true);
+  const cancelLogout = () => setIsLogoutDialogOpen(false);
 
   const closeSidebar = () => setIsOpen(false);
   const linkClassName = (path) =>
@@ -84,148 +93,132 @@ const Sidebar = () => {
 
         {/* Navigation */}
 
-        {user?.role === "admin" ? (
-          <nav className="flex-1 p-4 space-y-3">
-            <Link
-              to="/dashboard"
-              onClick={closeSidebar}
-              className={linkClassName("/dashboard")}
-            >
-              <LayoutDashboard />
-              Dashboard
-            </Link>
+        <nav className="flex-1 space-y-3 p-4">
+          <Link
+            to="/dashboard"
+            onClick={closeSidebar}
+            className={linkClassName("/dashboard")}
+          >
+            <LayoutDashboard />
+            Dashboard
+          </Link>
 
+          {[
+            ...(user?.role === "HR"
+              ? [
+                  ["/employees", IdCardLanyard, "Employee Management"],
+                  ["/attendance", Timer, "Attendance & Work Hours"],
+                  ["/leave", FolderOutput, "Leave Management"],
+                  ["/payslip", CreditCard, "Payroll & Payslips"],
+                  ["/performance", ChartSpline, "Performance & Training"],
+                ]
+              : []),
+            ...(user?.role === "Managers" || user?.role === "Team Lead"
+              ? [
+                  ["/employees", UsersRound, "Team Employees"],
+                  ["/attendance", Timer, "Attendance & Work Hours"],
+                  ["/leave", FolderOutput, "Leave Management"],
+                  ["/performance", ChartSpline, "Performance & Training"],
+                ]
+              : []),
+            ...(user?.role === "Recruiters"
+              ? [[
+                  "/employees",
+                  UserRoundSearch,
+                  "Employee Management",
+                ]]
+              : []),
+            ...(user?.role === "Finance"
+              ? [[
+                  "/payslip",
+                  CreditCard,
+                  "Payroll & Payslips",
+                ]]
+              : []),
+            ...(user?.role === "Employees"
+              ? [
+                  ["/attendance", Timer, "My Attendance"],
+                  ["/leave", FolderOutput, "My Leave"],
+                  ["/payslip", CreditCard, "My Payslips"],
+                  ["/performance", ChartSpline, "My Performance"],
+                ]
+              : []),
+          ].map(([path, Icon, label]) => (
             <Link
-              to="/all-tickets"
+              key={path}
+              to={path}
               onClick={closeSidebar}
-              className={linkClassName("/all-tickets")}
+              className={linkClassName(path)}
             >
-              <PlusCircle />
-              All Tickets
+              <Icon />
+              {label}
             </Link>
-            <Link
-              to="/all-users"
-              onClick={closeSidebar}
-              className={linkClassName("/all-users")}
-            >
-              <PlusCircle />
-              All Users
-            </Link>
+          ))}
 
-            <Link
-              to="/profile"
-              onClick={closeSidebar}
-              className={linkClassName("/profile")}
-            >
-              <User />
-              Profile
-            </Link>
-          </nav>
-        ) : user?.role === "user" ? (
-          <nav className="flex-1 p-4 space-y-3">
-            <Link
-              to="/dashboard"
-              onClick={closeSidebar}
-              className={linkClassName("/dashboard")}
-            >
-              <LayoutDashboard />
-              Dashboard
-            </Link>
-
-            <Link
-              to="/create-ticket"
-              onClick={closeSidebar}
-              className={linkClassName("/create-ticket")}
-            >
-              <PlusCircle />
-              Create Ticket
-            </Link>
-
-            <Link
-              to="/my-tickets"
-              onClick={closeSidebar}
-              className={linkClassName("/my-tickets")}
-            >
-              <Ticket />
-              My Tickets
-            </Link>
-
-            <Link
-              to="/profile"
-              onClick={closeSidebar}
-              className={linkClassName("/profile")}
-            >
-              <User />
-              Profile
-            </Link>
-          </nav>
-        ) : (
-          <nav className="flex-1 p-4 space-y-3">
-            <Link
-              to="/dashboard"
-              onClick={closeSidebar}
-              className={linkClassName("/dashboard")}
-            >
-              <LayoutDashboard />
-              Dashboard
-            </Link>
-
-            <Link
-              to="/attendance"
-              onClick={closeSidebar}
-              className={linkClassName("/attendance")}
-            >
-              <Timer  />
-              Attendance & Work Hours
-            </Link>
-
-            <Link
-              to="/employees"
-              onClick={closeSidebar}
-              className={linkClassName("/employees")}
-            >
-              <IdCardLanyard  />
-              Employee Management
-            </Link>
-
-            <Link
-              to="/payslip"
-              onClick={closeSidebar}
-              className={linkClassName("/payslip")}
-            >
-              <CreditCard  />
-              Payroll & Payslips
-            </Link>
-
-            <Link
-              to="/leave"
-              onClick={closeSidebar}
-              className={linkClassName("/leave")}
-            >
-              <FolderOutput  />
-              Leave Management
-            </Link>
-
-            <Link
-              to="/performance"
-              onClick={closeSidebar}
-              className={linkClassName("/performance")}
-            >
-              <ChartSpline  />
-              Performance & Training
-            </Link>
-          </nav>
-        )}
+          <Link
+            to="/profile"
+            onClick={closeSidebar}
+            className={linkClassName("/profile")}
+          >
+            <UserRoundCog />
+            Profile
+          </Link>
+        </nav>
 
         {/* Logout */}
         <button
-          onClick={logout}
+          onClick={requestLogout}
           className="m-4 bg-slate-800 text-white p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-teal-700 transition"
         >
           <LogOut />
           Logout
         </button>
       </div>
+
+      {isLogoutDialogOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              cancelLogout();
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-dialog-title"
+          >
+            <h2
+              id="logout-dialog-title"
+              className="text-xl font-bold text-slate-800 text-center"
+            >
+              Are you sure you want to log out?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              You will need to sign in again to access your workspace.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={cancelLogout}
+                className="rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                className="rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Yes, log out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

@@ -1,48 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import UserLayout from "../layouts/UserLayout";
 import { Link } from "react-router-dom";
-import {
-  getAllTickets,
-  getAssignedTickets,
-  getMyTickets,
-} from "../api/ticketApi";
-import { getUsers } from "../api/userApi";
-import { getUser } from "../utils/auth";
 import {
   ArrowRight,
   Bell,
   CalendarDays,
   CheckCircle2,
   Clock3,
+  CreditCard,
   FileBarChart,
+  UserCheck,
+  UserPlus,
   Users,
 } from "lucide-react";
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts";
-
-const STATUS_COLORS = {
-  Open: "#0f766e",
-  "In Progress": "#3b82f6",
-  Resolved: "#14b8a6",
-  Closed: "#64748b",
-};
-
-const ROLE_TITLES = {
-  admin: "Admin Dashboard",
-  agent: "Dashboard Agent",
-  user: "My Dashboard",
-};
+import UserLayout from "../layouts/UserLayout";
+import mockEmployees from "../assets/mockEmployees";
+import { getUser } from "../utils/auth";
 
 const formatDate = (date) =>
   new Intl.DateTimeFormat("en", {
@@ -61,380 +32,310 @@ const EmptyState = ({ icon: Icon, title, description }) => (
   </div>
 );
 
+const StatCard = ({ label, value, detail, icon: Icon, color }) => (
+  <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <p className="mt-2 text-3xl font-bold text-slate-800">{value}</p>
+      </div>
+      <div className={`rounded-xl p-3 ${color}`}>
+        <Icon size={21} />
+      </div>
+    </div>
+    <p className="mt-4 text-xs text-slate-500">{detail}</p>
+  </div>
+);
+
+const SectionHeader = ({ title, description, icon: Icon }) => (
+  <div className="mb-5 flex items-center justify-between">
+    <div>
+      <h2 className="text-xl font-bold text-slate-800">{title}</h2>
+      <p className="mt-1 text-sm text-slate-500">{description}</p>
+    </div>
+    <Icon className="text-teal-600" size={22} />
+  </div>
+);
+
+const QuickLink = ({ label, to, icon: Icon }) => (
+  <Link
+    to={to}
+    className="group flex items-center justify-between rounded-xl border border-slate-200 p-3 transition hover:border-teal-200 hover:bg-teal-50"
+  >
+    <span className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+      <Icon className="text-teal-600" size={18} />
+      {label}
+    </span>
+    <ArrowRight
+      className="text-slate-300 transition group-hover:translate-x-1 group-hover:text-teal-600"
+      size={16}
+    />
+  </Link>
+);
+
+const HrDashboard = ({ employees }) => {
+  const activeEmployees = employees.filter(
+    (employee) => employee.status === "Active"
+  );
+  const newJoiners = employees.slice(0, 6);
+
+  return (
+    <>
+      <section>
+        <div className="mb-4">
+          <h2 className="text-xl font-bold text-slate-800">People snapshot</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            A quick view of your workforce.
+          </p>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            label="Total headcount"
+            value={employees.length}
+            detail="Employees in the directory"
+            icon={Users}
+            color="bg-teal-50 text-teal-700"
+          />
+          <StatCard
+            label="Active employees"
+            value={activeEmployees.length}
+            detail="Currently marked as active"
+            icon={UserCheck}
+            color="bg-emerald-50 text-emerald-700"
+          />
+          <StatCard
+            label="New joiners"
+            value={newJoiners.length}
+            detail="Recent employee records"
+            icon={UserPlus}
+            color="bg-blue-50 text-blue-700"
+          />
+          <StatCard
+            label="Departures"
+            value={employees.length - activeEmployees.length}
+            detail="Marked as not active"
+            icon={Users}
+            color="bg-amber-50 text-amber-700"
+          />
+        </div>
+      </section>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+          <SectionHeader
+            title="Today&apos;s attendance"
+            description="Live workforce availability."
+            icon={Clock3}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[
+              ["Present", activeEmployees.length],
+              ["Late", "—"],
+              ["Absent", employees.length - activeEmployees.length],
+              ["On leave", "—"],
+              ["Currently working", "—"],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3"
+              >
+                <span className="text-sm text-slate-600">{label}</span>
+                <span className="font-bold text-slate-700">{value}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-slate-400">
+            Attendance values are based on the current mock employee status.
+          </p>
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+          <SectionHeader
+            title="Pending approvals"
+            description="Items that need HR attention."
+            icon={CheckCircle2}
+          />
+          <div className="space-y-3">
+            {["Leave requests", "Attendance corrections", "Payroll reviews", "Employee requests"].map(
+              (item) => (
+                <div
+                  key={item}
+                  className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-3"
+                >
+                  <span className="text-sm text-slate-600">{item}</span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-400">
+                    0 pending
+                  </span>
+                </div>
+              )
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+          <SectionHeader
+            title="Upcoming HR activities"
+            description="Important dates to keep on your radar."
+            icon={Bell}
+          />
+          <EmptyState
+            icon={CalendarDays}
+            title="No upcoming activities available"
+            description="Birthdays, probation reviews, renewals, interviews and training deadlines will appear here."
+          />
+        </section>
+
+        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+          <SectionHeader
+            title="Quick links"
+            description="Jump straight to common HR tasks."
+            icon={ArrowRight}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <QuickLink label="Employee records" to="/employees" icon={Users} />
+            <QuickLink label="Attendance" to="/attendance" icon={Clock3} />
+            <QuickLink label="Leave management" to="/leave" icon={CalendarDays} />
+            <QuickLink label="Payroll & payslips" to="/payslip" icon={FileBarChart} />
+          </div>
+        </section>
+      </div>
+    </>
+  );
+};
+
+const EmployeeDashboard = ({ user, employee }) => (
+  <>
+    <section>
+      <div className="mb-4">
+        <h2 className="text-xl font-bold text-slate-800">My work overview</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          A quick summary of your attendance, leave and payroll.
+        </p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Today&apos;s attendance"
+          value={employee?.status === "Active" ? "Present" : "Absent"}
+          detail="Based on today&apos;s mock record"
+          icon={UserCheck}
+          color="bg-emerald-50 text-emerald-700"
+        />
+        <StatCard
+          label="Working hours"
+          value={`${employee?.workingHours || 0}h`}
+          detail="Today&apos;s recorded hours"
+          icon={Clock3}
+          color="bg-blue-50 text-blue-700"
+        />
+        <StatCard
+          label="Leave balance"
+          value="12 days"
+          detail="Available this year"
+          icon={CalendarDays}
+          color="bg-amber-50 text-amber-700"
+        />
+        <StatCard
+          label="Next payslip"
+          value="30 Oct"
+          detail="Estimated payroll date"
+          icon={CreditCard}
+          color="bg-teal-50 text-teal-700"
+        />
+      </div>
+    </section>
+
+    <div className="grid gap-6 xl:grid-cols-2">
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+        <SectionHeader
+          title="Today&apos;s timeline"
+          description="Your attendance activity for today."
+          icon={Clock3}
+        />
+        <div className="space-y-3">
+          {[
+            ["09:00 AM", "Workday started", "Present"],
+            ["01:00 PM", "Lunch break", "1 hour"],
+            ["05:30 PM", "Expected finish", "On schedule"],
+          ].map(([time, activity, status]) => (
+            <div
+              key={time}
+              className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3"
+            >
+              <div>
+                <p className="text-sm font-semibold text-slate-700">{activity}</p>
+                <p className="mt-1 text-xs text-slate-500">{time}</p>
+              </div>
+              <span className="text-xs font-semibold text-teal-700">{status}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+        <SectionHeader
+          title="My quick links"
+          description="Access your employee tools."
+          icon={ArrowRight}
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <QuickLink label="My attendance" to="/attendance" icon={Clock3} />
+          <QuickLink label="My leave" to="/leave" icon={CalendarDays} />
+          <QuickLink label="My payslips" to="/payslip" icon={CreditCard} />
+          <QuickLink label="My performance" to="/performance" icon={FileBarChart} />
+        </div>
+      </section>
+    </div>
+
+    <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+      <SectionHeader
+        title="Upcoming reminders"
+        description="Keep track of your next HR activities."
+        icon={Bell}
+      />
+      <EmptyState
+        icon={CalendarDays}
+        title="No upcoming reminders"
+        description={`${user?.name || "You"} have no probation, training or review reminders at the moment.`}
+      />
+    </section>
+  </>
+);
+
 const Dashboard = () => {
   const user = getUser();
-  const userRole = user?.role || "user";
-  const userId = user?.id ?? user?._id;
-
-  const [tickets, setTickets] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    const fetchTickets = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        if (!userId) {
-          setTickets([]);
-          return;
-        }
-
-        const response =
-          userRole === "admin"
-            ? await getAllTickets()
-            : userRole === "agent"
-              ? await getAssignedTickets(userId)
-              : await getMyTickets(userId);
-
-        setTickets(response.data.data || []);
-      } catch (err) {
-        setError(err.response?.data?.message || "Failed to load dashboard");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTickets();
-  }, [userId, userRole]);
-
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const response = await getUsers(1, "all", 1000);
-        setEmployees(response.data?.data?.users || []);
-      } catch (err) {
-        console.error("Failed to load employees for dashboard", err);
-      }
-    };
-
-    fetchEmployees();
-  }, []);
-
-  const newJoiners = useMemo(() => {
-    const monthAgo = new Date();
-    monthAgo.setDate(monthAgo.getDate() - 30);
-
-    return employees
-      .filter(
-        (employee) =>
-          employee.createdAt && new Date(employee.createdAt) >= monthAgo
-      )
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [employees]);
-
-  const quickLinks = [
-    { label: "Employee records", to: "/employees", icon: Users },
-    { label: "Attendance & work hours", to: "/attendance", icon: Clock3 },
-    { label: "Leave management", to: "/leave", icon: CalendarDays },
-    { label: "Payroll & payslips", to: "/payslip", icon: FileBarChart },
-  ];
-
-  const statusCounts = useMemo(() => {
-    return ["Open", "In Progress", "Resolved", "Closed"].map((status) => ({
-      name: status,
-      value: tickets.filter((ticket) => ticket.status === status).length,
-    }));
-  }, [tickets]);
-
-  const totalTickets = tickets.length;
-  const openCount =
-    statusCounts.find((item) => item.name === "Open")?.value || 0;
-  const progressCount =
-    statusCounts.find((item) => item.name === "In Progress")?.value || 0;
-  const resolvedCount =
-    statusCounts.find((item) => item.name === "Resolved")?.value || 0;
-  const closedCount =
-    statusCounts.find((item) => item.name === "Closed")?.value || 0;
-
-  const statusBarData = statusCounts.map((item) => ({
-    ...item,
-    value: item.value,
-  }));
-
-  const recentTickets = [...tickets]
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 5);
+  const userRole = user?.role || "Employees";
+  const employees = mockEmployees;
+  const currentEmployee =
+    employees.find(
+      (employee) => employee.id === user?.id || employee.email === user?.email
+    ) || employees[0];
+  const isHr = userRole.toLowerCase() === "hr";
 
   return (
     <UserLayout>
       <div className="space-y-6">
-        <div className="bg-linear-to-r from-slate-900 to-teal-700 rounded-3xl p-8 text-white shadow-lg">
-          <h1 className="text-4xl font-bold">
-            {ROLE_TITLES[userRole] || ROLE_TITLES.user}
+        <div className="rounded-3xl bg-linear-to-r from-slate-900 to-teal-700 p-8 text-white shadow-lg">
+          <p className="text-sm font-medium text-teal-200">
+            {isHr ? "HR operations" : "Employee self-service"}
+          </p>
+          <h1 className="mt-2 text-4xl font-bold">
+            {isHr ? "HR Dashboard" : "My Dashboard"}
           </h1>
           <p className="mt-3 text-slate-200">
-            Welcome back {user?.name || "User"}, Here is a summary of your
-            documents and statuses.
+            Welcome back {user?.name || currentEmployee?.name || "User"},{" "}
+            {isHr
+              ? "here is your workforce overview for today."
+              : "here is your personal work overview for today."}
           </p>
+          <p className="mt-4 text-sm text-slate-300">{formatDate(new Date())}</p>
         </div>
 
-        {loading ? (
-          <div className="bg-white rounded-3xl shadow p-12 text-center text-slate-500">
-            Loading dashboard...
-          </div>
-        ) : error ? (
-          <div className="bg-white rounded-3xl shadow p-12 text-center">
-            <p className="text-red-500 font-semibold">{error}</p>
-          </div>
+        {isHr ? (
+          <HrDashboard employees={employees} />
         ) : (
-          <>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-              <div className="bg-white rounded-2xl p-6 shadow">
-                <p className="text-slate-500">Total Employee</p>
-                <h2 className="text-4xl font-bold text-teal-700">
-                  {totalTickets}
-                </h2>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 shadow">
-                <p className="text-slate-500">Active</p>
-                <h2 className="text-4xl font-bold text-teal-700">
-                  {openCount}
-                </h2>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 shadow">
-                <p className="text-slate-500">New Joiners</p>
-                <h2 className="text-4xl font-bold text-blue-500">
-                  {progressCount}
-                </h2>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 shadow">
-                <p className="text-slate-500">Departures</p>
-                <h2 className="text-4xl font-bold text-teal-600">
-                  {resolvedCount}
-                </h2>
-              </div>
-
-              <div className="bg-white rounded-2xl p-6 shadow">
-                <p className="text-slate-500">Closed</p>
-                <h2 className="text-4xl font-bold text-slate-500">
-                  {closedCount}
-                </h2>
-              </div>
-            </div>
-
-
-            <div className="grid gap-6 xl:grid-cols-2">
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Today&apos;s attendance</h2>
-                <p className="mt-1 text-sm text-slate-500">Live workforce availability.</p>
-              </div>
-              <Clock3 className="text-teal-600" size={22} />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {["Present", "Late", "Absent", "On leave", "Currently working"].map((item) => (
-                <div key={item} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                  <span className="text-sm text-slate-600">{item}</span>
-                  <span className="font-bold text-slate-400">—</span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-4 text-xs text-slate-400">
-              Connect an attendance source to populate today&apos;s figures.
-            </p>
-          </section>
-
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Pending approvals</h2>
-                <p className="mt-1 text-sm text-slate-500">Items that need HR attention.</p>
-              </div>
-              <CheckCircle2 className="text-teal-600" size={22} />
-            </div>
-            <div className="space-y-3">
-              {["Leave requests", "Attendance corrections", "Payroll reviews", "Employee requests"].map((item) => (
-                <div key={item} className="flex items-center justify-between rounded-xl border border-slate-100 px-4 py-3">
-                  <span className="text-sm text-slate-600">{item}</span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-400">
-                    Not connected
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-2">
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Upcoming HR activities</h2>
-                <p className="mt-1 text-sm text-slate-500">Important dates to keep on your radar.</p>
-              </div>
-              <Bell className="text-teal-600" size={22} />
-            </div>
-            <EmptyState
-              icon={CalendarDays}
-              title="No upcoming activities available"
-              description="Birthdays, probation reviews, renewals, interviews and training deadlines will appear here when those records are connected."
-            />
-          </section>
-
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Quick links</h2>
-                <p className="mt-1 text-sm text-slate-500">Jump straight to common HR tasks.</p>
-              </div>
-              <ArrowRight className="text-teal-600" size={22} />
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {quickLinks.map(({ label, to, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="group flex items-center justify-between rounded-xl border border-slate-200 p-3 transition hover:border-teal-200 hover:bg-teal-50"
-                >
-                  <span className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                    <Icon className="text-teal-600" size={18} />
-                    {label}
-                  </span>
-                  <ArrowRight className="text-slate-300 transition group-hover:translate-x-1 group-hover:text-teal-600" size={16} />
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        {newJoiners.length > 0 && (
-          <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
-            <h2 className="text-xl font-bold text-slate-800">Recent joiners</h2>
-            <p className="mt-1 text-sm text-slate-500">People added to the employee directory recently.</p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {newJoiners.slice(0, 6).map((employee) => (
-                <div key={employee._id || employee.id} className="flex items-center gap-3 rounded-xl bg-slate-50 p-3">
-                  <div className="grid h-10 w-10 place-content-center rounded-full bg-teal-100 font-bold text-teal-700">
-                    {(employee.name || "?").charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-700">{employee.name || "Unnamed employee"}</p>
-                    <p className="text-xs text-slate-500">Joined {formatDate(employee.createdAt)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-            <div className="grid gap-6 xl:grid-cols-2">
-              <div className="bg-slate-100 rounded-3xl shadow p-6">
-                <div className="mb-4">
-                  <h2 className="text-2xl font-bold text-slate-800">
-                     Status Breakdown
-                  </h2>
-                  <p className="text-slate-500 mt-1">
-                    Pie chart of  statuses
-                  </p>
-                </div>
-
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={statusCounts}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={110}
-                        innerRadius={65}
-                        paddingAngle={3}
-                      >
-                        {statusCounts.map((entry) => (
-                          <Cell
-                            key={entry.name}
-                            fill={STATUS_COLORS[entry.name] || "#cbd5e1"}
-                          />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-slate-100 rounded-3xl shadow p-6">
-                <div className="mb-4">
-                  <h2 className="text-2xl font-bold text-slate-800">
-                    Status Graph
-                  </h2>
-                  <p className="text-slate-500 mt-1">
-                    Bar graph of the same status summary....
-                  </p>
-                </div>
-
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={statusBarData}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis allowDecimals={false} />
-                      <Tooltip />
-                      <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                        {statusBarData.map((entry) => (
-                          <Cell
-                            key={entry.name}
-                            fill={STATUS_COLORS[entry.name] || "#94a3b8"}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-3xl shadow p-6">
-              <h2 className="text-2xl font-bold text-slate-800 mb-4">
-                Recent Documents
-              </h2>
-
-              {recentTickets.length === 0 ? (
-                <p className="text-slate-500">No documents available</p>
-              ) : (
-                <div className="space-y-4">
-                  {recentTickets.map((ticket) => (
-                    <div
-                      key={ticket._id}
-                      className="border rounded-2xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3"
-                    >
-                      <div>
-                        <h3 className="font-semibold text-slate-800">
-                          {ticket.title}
-                        </h3>
-                        <p className="text-slate-500 text-sm">
-                          {ticket.ticketNumber} • {ticket.category}
-                        </p>
-                      </div>
-
-                      <span
-                        className={`inline-flex w-fit px-3 py-1 rounded-full text-sm font-medium ${
-                          ticket.status === "Open"
-                            ? "bg-teal-100 text-teal-700"
-                            : ticket.status === "In Progress"
-                              ? "bg-blue-100 text-blue-600"
-                              : ticket.status === "Resolved"
-                                ? "bg-teal-100 text-teal-700"
-                                : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {ticket.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
+          <EmployeeDashboard user={user} employee={currentEmployee} />
         )}
       </div>
     </UserLayout>

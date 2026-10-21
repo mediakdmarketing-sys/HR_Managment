@@ -1,4 +1,5 @@
 import Sidebar from "../components/Sidebar";
+import NavBar from "../components/NavBar";
 
 const UserLayout = ({ children }) => {
   return (
@@ -6,6 +7,7 @@ const UserLayout = ({ children }) => {
       <Sidebar />
 
       <div className="min-w-0 flex-1 h-screen overflow-y-auto p-6 sm:ml-64">
+        <NavBar />
         {children}
       </div>
     </div>
