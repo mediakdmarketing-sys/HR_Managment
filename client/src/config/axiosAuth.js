@@ -25,11 +25,13 @@ axios.interceptors.request.use(async (config) => {
 
   await firebaseAuth.authStateReady();
   const firebaseUser = firebaseAuth.currentUser;
-  if (firebaseUser) {
-    const token = await firebaseUser.getIdToken();
-    localStorage.setItem("token", token);
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  // Fall back to the token saved at login if Firebase could not restore its session
+  // (e.g. blocked site storage); the server's 401 then ends the session cleanly.
+  const token = firebaseUser
+    ? await firebaseUser.getIdToken()
+    : localStorage.getItem("token");
+  if (firebaseUser) localStorage.setItem("token", token);
+  if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
