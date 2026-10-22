@@ -305,7 +305,7 @@ const EmployeeDashboard = ({ user, employee }) => (
 
 const Dashboard = () => {
   const user = getUser();
-  const userRole = user?.role || "Employees";
+  const userRole = user?.role || "Employee";
   const employees = mockEmployees;
   const currentEmployee =
     employees.find(

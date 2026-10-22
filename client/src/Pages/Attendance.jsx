@@ -83,7 +83,7 @@ function EmployeeAttendance() {
   const employee =
     mockEmployees.find(
       (item) => item.id === user?.id || item.email === user?.email,
-    ) || mockEmployees.find((item) => item.role === "Employees");
+    ) || mockEmployees.find((item) => item.role === "Employee");
   const [isPunchedIn, setIsPunchedIn] = useState(false);
   const [isOnBreak, setIsOnBreak] = useState(false);
   const [workSeconds, setWorkSeconds] = useState(SAMPLE_WORK_SECONDS);

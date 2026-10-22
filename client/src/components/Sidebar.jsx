@@ -8,6 +8,7 @@ import {
   Timer,
   ChartSpline,
   FolderOutput,
+  FileSignature,
   CreditCard,
   IdCardLanyard,
   UserRoundCog,
@@ -70,15 +71,15 @@ const Sidebar = () => {
       {/* Sidebar */}
       <div
         className={`
-          fixed top-0 left-0 h-screen rounded-3xl p-2
-          w-64 bg-white shadow-lg z-50
+          fixed inset-y-0 left-0 h-[100dvh] w-[min(16rem,calc(100vw-1rem))]
+          rounded-r-3xl p-2 bg-white shadow-lg z-50
           transform transition-transform duration-300
           ${isOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"}
-          flex flex-col
+          flex flex-col overflow-hidden
         `}
       >
         {/* Header */}
-        <div className="p-6  flex items-center justify-between">
+        <div className="flex shrink-0 items-center justify-between p-4 sm:p-6">
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 place-content-center rounded-2xl bg-linear-to-br from-slate-800 to-teal-600 shadow-lg shadow-teal-600/20">
               <SquareDashedKanban  className="text-white w-6 h-6" />
@@ -93,7 +94,7 @@ const Sidebar = () => {
 
         {/* Navigation */}
 
-        <nav className="flex-1 space-y-3 p-4">
+        <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           <Link
             to="/dashboard"
             onClick={closeSidebar}
@@ -111,9 +112,10 @@ const Sidebar = () => {
                   ["/leave", FolderOutput, "Leave Management"],
                   ["/payslip", CreditCard, "Payroll & Payslips"],
                   ["/performance", ChartSpline, "Performance & Training"],
+                  ["/templates", FileSignature, "Letter Templates"],
                 ]
               : []),
-            ...(user?.role === "Managers" || user?.role === "Team Lead"
+            ...(user?.role === "Manager" || user?.role === "Team Lead"
               ? [
                   ["/employees", UsersRound, "Team Employees"],
                   ["/attendance", Timer, "Attendance & Work Hours"],
@@ -121,7 +123,7 @@ const Sidebar = () => {
                   ["/performance", ChartSpline, "Performance & Training"],
                 ]
               : []),
-            ...(user?.role === "Recruiters"
+            ...(user?.role === "Recruiter"
               ? [[
                   "/employees",
                   UserRoundSearch,
@@ -135,7 +137,7 @@ const Sidebar = () => {
                   "Payroll & Payslips",
                 ]]
               : []),
-            ...(user?.role === "Employees"
+            ...(user?.role === "Employee"
               ? [
                   ["/attendance", Timer, "My Attendance"],
                   ["/leave", FolderOutput, "My Leave"],
@@ -155,24 +157,41 @@ const Sidebar = () => {
             </Link>
           ))}
 
-          <Link
+          {/* <Link
             to="/profile"
             onClick={closeSidebar}
             className={linkClassName("/profile")}
           >
             <UserRoundCog />
             Profile
-          </Link>
+          </Link> */}
         </nav>
 
-        {/* Logout */}
-        <button
-          onClick={requestLogout}
-          className="m-4 bg-slate-800 text-white p-3 rounded-xl flex items-center justify-center gap-2 hover:bg-teal-700 transition"
-        >
-          <LogOut />
-          Logout
-        </button>
+        <div className="mx-4 mb-2 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-content-center rounded-full bg-linear-to-br from-slate-800 to-teal-600 text-lg font-bold text-white">
+              {user?.name?.trim()?.charAt(0)?.toUpperCase() || "U"}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-700">
+                {user?.name || "User"}
+              </p>
+              {user?.role && (
+                <p className="truncate text-xs font-medium text-teal-700">
+                  {user.role}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={requestLogout}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 p-3 text-white transition hover:bg-teal-700"
+          >
+            <LogOut size={18} />
+            Logout
+          </button>
+        </div>
       </div>
 
       {isLogoutDialogOpen && (

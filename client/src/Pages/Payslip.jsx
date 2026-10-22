@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Eye, Printer, Search, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Eye, FileUp, Printer, Search, X } from "lucide-react";
 import UserLayout from "../layouts/UserLayout";
 import mockEmployees from "../assets/mockEmployees";
 import companyIcon from "../assets/icon.png";
@@ -20,19 +20,24 @@ const formatCurrency = (amount) =>
 const getPayslip = (employee) => {
   const monthlyTotalWorkingHours = Number(employee.monthlyTotalWorkingHours) || 0;
   const countableHours = Math.min(monthlyTotalWorkingHours, MAX_COUNTABLE_HOURS);
-  const basicSalary = countableHours * HOURLY_RATE;
-  const housingAllowance = Math.round(basicSalary * 0.2);
-  const transportAllowance = 2500;
-  const providentFund = Math.round(basicSalary * 0.12);
-  const tax = Math.round((basicSalary + housingAllowance) * 0.05);
+  const hourlyRate = Number(employee.hourlyRate) || HOURLY_RATE;
+  const basicSalary = Number(employee.basicSalary) || countableHours * hourlyRate;
+  const housingAllowance =
+    Number(employee.housingAllowance) || Math.round(basicSalary * 0.2);
+  const transportAllowance = Number(employee.transportAllowance) || 2500;
+  const providentFund =
+    Number(employee.providentFund) || Math.round(basicSalary * 0.12);
+  const tax =
+    Number(employee.tax) ||
+    Math.round((basicSalary + housingAllowance) * 0.05);
 
   return {
     ...employee,
     payslipNumber: `PS-${new Date().getFullYear()}-${employee.id}`,
-    payPeriod: "October 2026",
+    payPeriod: employee.payPeriod || "October 2026",
     monthlyTotalWorkingHours,
     countableHours,
-    hourlyRate: HOURLY_RATE,
+    hourlyRate,
     basicSalary,
     housingAllowance,
     transportAllowance,
@@ -47,6 +52,94 @@ const getPayslip = (employee) => {
       providentFund -
       tax,
   };
+};
+
+const normaliseHeader = (header) =>
+  header.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const parseCsvRow = (row) => {
+    const values = [];
+    let value = "";
+    let insideQuotes = false;
+
+    for (let index = 0; index < row.length; index += 1) {
+      const character = row[index];
+      const nextCharacter = row[index + 1];
+
+      if (character === '"' && insideQuotes && nextCharacter === '"') {
+        value += '"';
+        index += 1;
+      } else if (character === '"') {
+        insideQuotes = !insideQuotes;
+      } else if (character === "," && !insideQuotes) {
+        values.push(value.trim());
+        value = "";
+      } else {
+        value += character;
+      }
+    }
+
+    values.push(value.trim());
+    return values;
+};
+
+const parsePayslipCsv = (content) => {
+    const rows = content
+      .replace(/^\uFEFF/, "")
+      .split(/\r?\n/)
+      .filter((row) => row.trim());
+
+    if (rows.length < 2) {
+      throw new Error("The CSV file must include a header and at least one record.");
+    }
+
+    const headers = parseCsvRow(rows[0]);
+    const headerMap = new Map(
+      headers.map((header, index) => [normaliseHeader(header), index]),
+    );
+    const getValue = (values, names) => {
+      const header = names.find((name) =>
+        headerMap.has(normaliseHeader(name)),
+      );
+      return header ? values[headerMap.get(normaliseHeader(header))] || "" : "";
+    };
+
+    if (
+      !["name", "employeeName"].some((name) =>
+        headerMap.has(normaliseHeader(name)),
+      ) ||
+      !["email", "emailId"].some((name) =>
+        headerMap.has(normaliseHeader(name)),
+      )
+    ) {
+      throw new Error("CSV must contain name and email columns.");
+    }
+
+    return rows
+      .slice(1)
+      .map((row, index) => {
+        const values = parseCsvRow(row);
+        return getPayslip({
+          id: getValue(values, ["id", "employeeId"]) || `CSV-${index + 1}`,
+          name: getValue(values, ["name", "employeeName"]),
+          email: getValue(values, ["email", "emailId"]),
+          role: getValue(values, ["role"]) || "Employee",
+          department: getValue(values, ["department", "dept"]) || "Unassigned",
+          payPeriod: getValue(values, ["payPeriod", "period"]) || "October 2026",
+          monthlyTotalWorkingHours: getValue(values, [
+            "monthlyTotalWorkingHours",
+            "workingHours",
+            "hours",
+          ]),
+          hourlyRate: getValue(values, ["hourlyRate", "rate"]),
+          basicSalary: getValue(values, ["basicSalary", "basicPay"]),
+          housingAllowance: getValue(values, ["housingAllowance", "housing"]),
+          transportAllowance: getValue(values, ["transportAllowance", "transport"]),
+          providentFund: getValue(values, ["providentFund", "pf"]),
+          tax: getValue(values, ["tax", "incomeTax"]),
+        });
+      })
+      .filter((payslip) => payslip.name && payslip.email);
 };
 
 const PayslipContent = ({ payslip }) => (
@@ -218,11 +311,53 @@ const printPayslip = (payslip) => {
 };
 
 function Payslip() {
-  const payslips = useMemo(() => mockEmployees.map(getPayslip), []);
+  const fileInputRef = useRef(null);
+  const [payslips, setPayslips] = useState(() => mockEmployees.map(getPayslip));
+  const [dataSource, setDataSource] = useState("Mock data");
+  const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("All departments");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPayslip, setSelectedPayslip] = useState(null);
+
+  const importCsv = (event) => {
+    const [file] = event.target.files;
+    if (!file) return;
+
+    setError("");
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const importedPayslips = parsePayslipCsv(String(reader.result));
+        if (importedPayslips.length === 0) {
+          throw new Error("The CSV file does not contain valid payslip records.");
+        }
+        setPayslips(importedPayslips);
+        setDataSource(file.name);
+        setCurrentPage(1);
+        setSearchTerm("");
+        setDepartmentFilter("All departments");
+      } catch (parseError) {
+        setError(parseError.message);
+      } finally {
+        event.target.value = "";
+      }
+    };
+    reader.onerror = () => {
+      setError("The CSV file could not be read.");
+      event.target.value = "";
+    };
+    reader.readAsText(file);
+  };
+
+  const restoreMockData = () => {
+    setPayslips(mockEmployees.map(getPayslip));
+    setDataSource("Mock data");
+    setError("");
+    setCurrentPage(1);
+    setSearchTerm("");
+    setDepartmentFilter("All departments");
+  };
 
   const filteredPayslips = payslips.filter((payslip) => {
     const search = searchTerm.trim().toLowerCase();
@@ -295,7 +430,33 @@ function Payslip() {
             >
               Clear
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={importCsv}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800"
+            >
+              <FileUp size={18} />
+              Import CSV
+            </button>
+            {dataSource !== "Mock data" && (
+              <button
+                type="button"
+                onClick={restoreMockData}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Restore mock data
+              </button>
+            )}
           </div>
+          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          <p className="mt-3 text-xs text-slate-400">Data source: {dataSource}</p>
         </section>
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">

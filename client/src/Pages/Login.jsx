@@ -3,7 +3,6 @@ import { Ticket, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/authApi";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
-import mockEmployees from "../assets/mockEmployees";
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -33,26 +32,13 @@ export default function Login() {
     try {
       setLoading(true);
 
-      const mockUser = mockEmployees.find(
-        (employee) =>
-          employee.email.toLowerCase() === formData.email.trim().toLowerCase() &&
-          employee.password === formData.password
-      );
+      const response = await loginUser({
+        email: formData.email.trim(),
+        password: formData.password,
+      });
 
-      if (mockUser) {
-        const userWithoutPassword = { ...mockUser };
-        delete userWithoutPassword.password;
-        localStorage.setItem("token", `mock-token-${mockUser.id}`);
-        localStorage.setItem("user", JSON.stringify(userWithoutPassword));
-      } else {
-        const response = await loginUser({
-          email: formData.email,
-          password: formData.password,
-        });
-
-        localStorage.setItem("token", response.data.data.token);
-        localStorage.setItem("user", JSON.stringify(response.data.data.user));
-      }
+      localStorage.setItem("token", response.data.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.data.user));
 
       toast.success("Welcome to HR Management", { theme: "dark" });
 

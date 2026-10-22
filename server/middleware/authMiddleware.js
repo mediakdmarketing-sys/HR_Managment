@@ -1,73 +1,27 @@
-import jwt from "jsonwebtoken";
+import { firebaseAuth, firestore } from "../config/firebase.js";
 
-
- const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  console.log(req.headers.authorization);
-
-  if (!authHeader) {
-    return res.status(401).json({
-      success: false,
-      message: "No token provided",
-    });
+const authenticate = async (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    return res.status(401).json({ success: false, message: "No token provided" });
   }
 
-  const token =
-    authHeader.split(" ")[1];
-
   try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
-
-    req.user = decoded;
-
+    const decoded = await firebaseAuth.verifyIdToken(header.slice(7));
+    const snapshot = await firestore
+      .collection("employees")
+      .where("uid", "==", decoded.uid)
+      .limit(1)
+      .get();
+    if (snapshot.empty || snapshot.docs[0].data().status !== "Active") {
+      return res.status(401).json({ success: false, message: "Inactive or unknown user" });
+    }
+    req.user = { id: snapshot.docs[0].id, ...snapshot.docs[0].data(), ...decoded };
     next();
   } catch {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid token",
-    });
+    return res.status(401).json({ success: false, message: "Invalid Firebase token" });
   }
 };
 
-export default authMiddleware;
-
-
-
-export const verifyToken = (
-  req,
-  res,
-  next
-) => {
-  // Accept token from cookie or Authorization header (Bearer)
-  const cookieToken = req.cookies?.token;
-  const authHeader = req.headers?.authorization;
-
-  let token = cookieToken;
-
-  if (!token && authHeader && authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1];
-  }
-
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: "No token found",
-    });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    req.user = decoded;
-
-    next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: "Invalid token",
-    });
-  }
-};
+export default authenticate;
+export const verifyToken = authenticate;

@@ -1,14 +1,15 @@
+import "dotenv/config";
 import cookieParser from "cookie-parser";
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
-import pool from "./db.js";
 import authRoute from "./routes/auth.route.js";
-import ticketRoute from "./routes/ticket.route.js";
+// import ticketRoute from "./routes/ticket.route.js";
 import userRoute from "./routes/user.route.js";
-import "./config/db.js";
+import leaveRoute from "./routes/leave.route.js";
+import notificationRoute from "./routes/notification.route.js";
+import templateRoute from "./routes/template.route.js";
+import { initializeFirebaseData } from "./database/init.js";
 
-dotenv.config();
 
 const app = express();
 app.use(
@@ -20,18 +21,41 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser());
 
 
 
 app.use("/api/auth", authRoute);
-app.use("/api/tickets", ticketRoute);
+// app.use("/api/tickets", ticketRoute);
 app.use("/api/users", userRoute);
+app.use("/api/leaves", leaveRoute);
+app.use("/api/notifications", notificationRoute);
+app.use("/api/templates", templateRoute);
 
-const PORT = process.env.PORT || 5000;
 
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-  });
 
+const initializeDatabase = async () => {
+  try {
+    await initializeFirebaseData();
+    console.log("Firebase initialized successfully!");
+
+    if (!process.env.FUNCTIONS_WORKER_RUNTIME && !process.env.K_SERVICE) {
+      app.listen(Number(process.env.PORT) || 5000, () => {
+        console.log(`Server running on port ${Number(process.env.PORT) || 5000}`);
+      });
+    }
+  } catch (error) {
+    console.error("Database initialization failed:", error);
+    if (process.env.FUNCTIONS_WORKER_RUNTIME || process.env.K_SERVICE) {
+      throw error;
+    }
+    process.exit(1);
+  }
+};
+
+export { app, initializeDatabase };
+
+if (!process.env.FUNCTIONS_WORKER_RUNTIME && !process.env.K_SERVICE) {
+  initializeDatabase();
+}

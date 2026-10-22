@@ -15,3 +15,15 @@ export const getUsers = (
   );
 
 };
+
+export const createUser = (userData) => {
+  return axios.post(API, userData);
+};
+
+export const getUserById = (id) => axios.get(`${API}/${id}`);
+
+export const getEmployeeOptions = () => axios.get(`${API}/options`);
+
+export const updateUser = (id, userData) => axios.patch(`${API}/${id}`, userData);
+
+export const disableUser = (id) => axios.patch(`${API}/${id}/disable`);

@@ -1,41 +1,45 @@
-import * as authService from "../services/authService.js";
 import { success, error } from "../utils/apiResponse.js";
-import generateToken from "../utils/generateToken.js";
+import { firebaseAuth, firestore } from "../config/firebase.js";
 
-export const register = async (req, res) => {
-  try {
-    const { name, email, phone, password } = req.body;
+// export const register = async (req, res) => {
+//   try {
+//     const { name, email, phone, password } = req.body;
 
-    const user = await authService.registerUser(name, email, phone, password);
+//     const user = await authService.registerUser(name, email, phone, password);
 
-    success(res, "User registered successfully", user, 201);
-  } catch (err) {
-    error(res, err.message);
-  }
-};
+//     success(res, "User registered successfully", user, 201);
+//   } catch (err) {
+//     error(res, err.message);
+//   }
+// };
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { idToken } = req.body;
 
-    const user = await authService.loginUser(email, password);
+    if (!idToken) {
+      return error(res, "Firebase ID token is required", 400);
+    }
 
-    const token = generateToken(user);
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    const decoded = await firebaseAuth.verifyIdToken(idToken);
+    const snapshot = await firestore
+      .collection("employees")
+      .where("uid", "==", decoded.uid)
+      .limit(1)
+      .get();
+    if (snapshot.empty || snapshot.docs[0].data().status !== "Active") {
+      return error(res, "User not found or inactive", 401);
+    }
+    const user = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
 
     success(res, "Login successful", {
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
       },
+      token: idToken,
     });
   } catch (err) {
     error(res, err.message);

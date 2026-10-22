@@ -60,9 +60,9 @@ const SectionHeader = ({ title, description, icon: Icon }) => (
 
 function Performance() {
   const user = getUser();
-  const role = user?.role || "Employees";
+  const role = user?.role || "Employee";
   const isHr = role.toLowerCase() === "hr";
-  const isManager = role === "Managers" || role === "Team Lead";
+  const isManager = role === "Manager" || role === "Team Lead";
   const currentEmployee = mockEmployees.find((employee) => employee.id === user?.id || employee.email === user?.email) || mockEmployees[2];
   const [goals, setGoals] = useState(initialGoals);
   const [plans] = useState(initialPlans);

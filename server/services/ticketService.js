@@ -1,96 +1,72 @@
-import Ticket from "../models/ticket.model.js";
+import { firestore } from "../config/firebase.js";
 
-// Create Ticket
+const tickets = firestore.collection("tickets");
+
+const serialize = (doc) => ({ id: doc.id, ...doc.data() });
+
 export const createTicketService = async (ticketData) => {
-  const lastTicket = await Ticket.findOne().sort({
-    createdAt: -1,
-  });
-
-  let nextNumber = 1;
-
-  if (lastTicket) {
-    nextNumber = parseInt(lastTicket.ticketNumber.split("-")[1]) + 1;
-  }
-
-  const ticketNumber = `TKT-${String(nextNumber).padStart(4, "0")}`;
-
-  return await Ticket.create({
+  const reference = tickets.doc();
+  const existing = await tickets.get();
+  const number = String(existing.size + 1).padStart(4, "0");
+  const ticket = {
     ...ticketData,
-    ticketNumber,
-  });
+    ticketNumber: `TKT-${number}`,
+    createdAt: new Date().toISOString(),
+  };
+  await reference.set(ticket);
+  return { id: reference.id, ...ticket };
 };
 
-// Get Logged-in User Tickets
 export const getMyTicketsService = async (userId) => {
-  if (!userId) {
-    return [];
-  }
-
-  return await Ticket.find({ userId }).sort({
-    createdAt: -1,
-  });
+  const snapshot = await tickets.where("userId", "==", String(userId)).get();
+  return snapshot.docs.map(serialize).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 };
 
-// Get Tickets Assigned To Agent
 export const getAssignedTicketsService = async (agentId) => {
-  if (!agentId) {
-    return [];
-  }
-
-  return await Ticket.find({
-    $or: [{ "assignedTo.id": agentId }, { assignedTo: agentId }],
-  }).sort({
-    createdAt: -1,
-  });
+  const snapshot = await tickets.get();
+  return snapshot.docs
+    .map(serialize)
+    .filter((ticket) => ticket.assignedTo?.id === String(agentId) || ticket.assignedTo === String(agentId))
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 };
 
-// Get All Tickets (Admin)
 export const getAllTicketsService = async () => {
-  return await Ticket.find().sort({
-    createdAt: -1,
-  });
+  const snapshot = await tickets.get();
+  return snapshot.docs.map(serialize).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 };
 
-// Update Ticket
-export const updateTicketService = async (ticketId, data) => {
-  const { comment, ...rest } = data;
-  const updateData = { ...rest };
+export const getTicketByIdService = async (id) => {
+  const snapshot = await tickets.doc(String(id)).get();
+  return snapshot.exists ? serialize(snapshot) : null;
+};
 
-  if (updateData.assignedTo) {
-    updateData.assignedTo = {
-      id: updateData.assignedTo.id ?? null,
-      name: updateData.assignedTo.name ?? "",
+export const updateTicketService = async (id, data) => {
+  const existing = await getTicketByIdService(id);
+  if (!existing) return null;
+  const { comment, ...updates } = data;
+  if (updates.assignedTo) {
+    updates.assignedTo = {
+      id: updates.assignedTo.id ?? null,
+      name: updates.assignedTo.name ?? "",
     };
   }
-
-  const updateOperations = {};
-
-  if (Object.keys(updateData).length > 0) {
-    updateOperations.$set = updateData;
-  }
-
+  const next = { ...updates };
   if (comment?.text?.trim()) {
-    updateOperations.$push = {
-      comments: {
-        text: comment.text.trim(),
-        createdBy: comment.createdBy,
-        createdByName: comment.createdByName,
-        createdAt: comment.createdAt || new Date(),
-      },
-    };
+    next.comments = [...(existing.comments || []), {
+      text: comment.text.trim(),
+      createdBy: comment.createdBy,
+      createdByName: comment.createdByName,
+      createdAt: comment.createdAt || new Date().toISOString(),
+    }];
   }
-
-  if (Object.keys(updateOperations).length === 0) {
-    return await Ticket.findById(ticketId);
-  }
-
-  return await Ticket.findByIdAndUpdate(ticketId, updateOperations, {
-    new: true,
-    runValidators: true,
-  });
+  await tickets.doc(String(id)).update(next);
+  return getTicketByIdService(id);
 };
 
-// Delete Ticket
-export const deleteTicketService = async (ticketId) => {
-  return await Ticket.findByIdAndDelete(ticketId);
+export const deleteTicketService = async (id) => {
+  const reference = tickets.doc(String(id));
+  const snapshot = await reference.get();
+  if (!snapshot.exists) return null;
+  await reference.delete();
+  return { id: String(id) };
 };

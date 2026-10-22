@@ -1,0 +1,4 @@
+id,name,email,role,department,payPeriod,monthlyTotalWorkingHours,hourlyRate,basicSalary,housingAllowance,transportAllowance,providentFund,tax
+EMP001,Ravi Kumar,ravi.kumar@hrms.example.com,Team Lead,Software,October 2026,240,150,36000,7200,2500,4320,2160
+EMP002,Suresh,suresh@hrms.example.com,Manager,Software,October 2026,232,150,34800,6960,2500,4176,2088
+EMP003,Tharshihan,tharshihan@hrms.example.com,Employee,Software,October 2026,225,150,33750,6750,2500,4050,2025
