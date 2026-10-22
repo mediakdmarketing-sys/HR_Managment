@@ -12,15 +12,22 @@ import { initializeFirebaseData } from "./database/init.js";
 
 
 const app = express();
+// CLIENT_URL is a comma-separated list of allowed frontend origins (e.g. the Vercel URL).
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  ...(process.env.CLIENT_URL || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/$/, ""))
+    .filter(Boolean),
+];
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-    ],
+    origin: allowedOrigins,
     credentials: true,
   })
 );
+app.get("/api/health", (req, res) => res.json({ success: true }));
 app.use(express.json({ limit: "8mb" }));
 app.use(cookieParser());
 
