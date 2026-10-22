@@ -1,13 +1,25 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ticket, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/authApi";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { clearSession, isLoggedIn, startSession } from "../utils/auth";
 import { toast } from "react-toastify";
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const reason = searchParams.get("reason");
+
+  useEffect(() => {
+    if (reason === "expired") {
+      toast.info("Your session has ended. Please log in again.", { theme: "dark" });
+    } else if (reason === "signed-out") {
+      toast.info("You have been signed out. Please log in again.", { theme: "dark" });
+    }
+  }, [reason]);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -29,6 +41,7 @@ export default function Login() {
       return;
     }
 
+    if (loading) return;
     try {
       setLoading(true);
 
@@ -37,13 +50,14 @@ export default function Login() {
         password: formData.password,
       });
 
-      localStorage.setItem("token", response.data.data.token);
-      localStorage.setItem("user", JSON.stringify(response.data.data.user));
+      startSession(response.data.data.token, response.data.data.user);
 
       toast.success("Welcome to HR Management", { theme: "dark" });
 
-      navigate("/dashboard");
+      navigate(location.state?.from || "/dashboard", { replace: true });
     } catch (err) {
+      // Firebase may have signed in even though the server rejected the user (e.g. disabled).
+      await clearSession();
       toast.error(err.response?.data?.message || "Login failed", {
         theme: "dark",
       });
@@ -51,6 +65,10 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  if (isLoggedIn()) {
+    return <Navigate to="/dashboard" replace />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 sm:p-6 flex items-center justify-center">
@@ -155,7 +173,8 @@ export default function Login() {
 
             <button
               type="submit"
-              className="w-full bg-linear-to-r from-slate-800 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-lg shadow-teal-600/20 hover:opacity-95 transition cursor-pointer"
+              disabled={loading}
+              className="w-full disabled:cursor-wait disabled:opacity-70 bg-linear-to-r from-slate-800 to-teal-600 text-white py-4 rounded-2xl font-semibold shadow-lg shadow-teal-600/20 hover:opacity-95 transition cursor-pointer"
             >
               {loading ? "Signing in..." : "Login"}
             </button>

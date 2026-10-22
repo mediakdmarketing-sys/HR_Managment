@@ -18,7 +18,7 @@ import {
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { logoutUser } from "../api/authApi";
-import { getUser } from "../utils/auth";
+import { clearSession, getUser } from "../utils/auth";
 
 const Sidebar = () => {
   const user = getUser();
@@ -34,8 +34,7 @@ const Sidebar = () => {
     } catch (error) {
       console.log(error);
     } finally {
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
+      await clearSession();
       setIsOpen(false);
       navigate("/login");
     }

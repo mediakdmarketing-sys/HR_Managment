@@ -29,7 +29,13 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 | HR | Any **Manager** |
 | Everyone else | **HR** and the employee's **assigned team lead** |
 
-No one can approve their own request. The requester is notified when a decision is made.
+No one can approve their own request. The requester is notified when a decision is made. A request can only be decided once. Submitting a request that overlaps one of your own pending or approved requests is rejected.
+
+### Access control
+
+- **Pages:** every page except `/` and `/login` requires login. Each page is limited to the roles that see it in the sidebar. Other URLs redirect to the dashboard.
+- **API:** all `/api` routes (except `/api/auth` and `/api/health`) require a valid Firebase ID token. Adding, editing and disabling employees is HR only. The employee directory is limited to HR, Managers, Team Leads and Recruiters. Everyone can read their own record.
+- **Sessions:** Firebase ID tokens always expire after 1 hour, so the client requests a fresh token from Firebase before each API call. A session lasts until logout, or `VITE_SESSION_HOURS` (default 12 hours), whichever comes first. An expired or rejected session sends the user back to the login page.
 
 ---
 
@@ -111,6 +117,7 @@ npm run dev               # http://localhost:5173
 | `VITE_API_URL` | `http://localhost:5000/api` |
 | `VITE_FIREBASE_*` | Values from the Firebase web app config |
 | `VITE_GOOGLE_CLIENT_ID` | OAuth client ID for Google Docs (see below). Without it, letters can only be downloaded as `.docx`. |
+| `VITE_SESSION_HOURS` | Optional. Maximum login session length in hours (default `12`). |
 
 > Vite reads `.env` only when it starts. Restart `npm run dev` after changing it.
 
@@ -197,6 +204,4 @@ If you add a custom domain later, add it in the same four places.
 
 ## Known limitations / next steps
 
-- `/api/users` routes (employee management) are not yet protected by login or role checks on the server.
-- The Firebase ID token stored at login expires after 1 hour and is not refreshed automatically.
 - Attendance uses mock data; payroll is not implemented yet.

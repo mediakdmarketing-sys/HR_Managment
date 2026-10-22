@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Check,
@@ -122,6 +122,11 @@ function Leave() {
   const [isTypeOpen, setIsTypeOpen] = useState(false);
   const [newType, setNewType] = useState("");
   const [activeTab, setActiveTab] = useState("requests");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [decidingId, setDecidingId] = useState(null);
+  // Refs block a second click that lands before React re-renders the disabled button.
+  const submittingRef = useRef(false);
+  const decidingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -200,6 +205,9 @@ function Leave() {
   const submitRequest = async (event) => {
     event.preventDefault();
     if (!form.startDate || !form.endDate || requestDays === 0) return;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
 
     try {
       const response = await createLeaveRequest({
@@ -221,10 +229,16 @@ function Leave() {
         error.response?.data?.message || "Unable to submit leave request.",
         { theme: "dark" },
       );
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
     }
   };
 
   const updateRequestStatus = async (id, status) => {
+    if (decidingRef.current) return;
+    decidingRef.current = true;
+    setDecidingId(id);
     try {
       const response = await updateLeaveStatus(id, status);
       setRequests((current) =>
@@ -238,6 +252,9 @@ function Leave() {
         error.response?.data?.message || "Unable to update leave request.",
         { theme: "dark" },
       );
+    } finally {
+      decidingRef.current = false;
+      setDecidingId(null);
     }
   };
 
@@ -423,19 +440,21 @@ function Leave() {
                               <div className="flex gap-2">
                                 <button
                                   type="button"
+                                  disabled={decidingId !== null}
                                   onClick={() =>
                                     updateRequestStatus(request.id, "Approved")
                                   }
-                                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                                  className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
                                 >
                                   Approve
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={decidingId !== null}
                                   onClick={() =>
                                     updateRequestStatus(request.id, "Rejected")
                                   }
-                                  className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-200"
+                                  className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-200 disabled:opacity-50"
                                 >
                                   Reject
                                 </button>
@@ -794,9 +813,10 @@ function Leave() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800"
+                  disabled={isSubmitting}
+                  className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
                 >
-                  Submit request
+                  {isSubmitting ? "Submitting..." : "Submit request"}
                 </button>
               </div>
             </form>

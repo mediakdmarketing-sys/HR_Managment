@@ -5,7 +5,7 @@ export const listLeaves = async (req, res) => {
     const requests = await leaveService.getLeaveRequests(req.user);
     return res.json({ success: true, data: requests });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };
 
@@ -59,7 +59,7 @@ export const createLeave = async (req, res) => {
     });
     return res.status(201).json({ success: true, data: request });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };
 
@@ -78,7 +78,7 @@ export const changeLeaveStatus = async (req, res) => {
     }
     return res.json({ success: true, data: request });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };
 
@@ -95,6 +95,6 @@ export const downloadLeaveAttachment = async (req, res) => {
     );
     return res.send(attachment.buffer);
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };

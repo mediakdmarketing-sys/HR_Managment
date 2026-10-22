@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Ban, Eye, Pencil, Plus, Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -41,6 +41,11 @@ function Employees() {
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [isSaving, setIsSaving] = useState(false);
+  const [disablingId, setDisablingId] = useState(null);
+  // Refs block a second click that lands before React re-renders the disabled button.
+  const savingRef = useRef(false);
+  const disablingRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -141,7 +146,9 @@ function Employees() {
 
   const addEmployee = async (event) => {
     event.preventDefault();
-    if (!canAddEmployee) return;
+    if (!canAddEmployee || savingRef.current) return;
+    savingRef.current = true;
+    setIsSaving(true);
 
     try {
       const response = await createUser({
@@ -164,11 +171,17 @@ function Employees() {
         error.response?.data?.message || "Unable to add employee.";
       setLoadError(message);
       toast.error(message, { theme: "dark" });
+    } finally {
+      savingRef.current = false;
+      setIsSaving(false);
     }
   };
 
   const disableEmployee = async (employee) => {
+    if (disablingRef.current) return;
     if (!window.confirm(`Disable ${employee.name}'s login?`)) return;
+    disablingRef.current = true;
+    setDisablingId(employee.id);
 
     try {
       const response = await disableUser(employee.id);
@@ -179,6 +192,9 @@ function Employees() {
       );
     } catch (error) {
       setLoadError(error.response?.data?.message || "Unable to disable employee.");
+    } finally {
+      disablingRef.current = false;
+      setDisablingId(null);
     }
   };
 
@@ -328,7 +344,7 @@ function Employees() {
                           <button
                             type="button"
                             title="Disable employee login"
-                            disabled={employee.status !== "Active"}
+                            disabled={employee.status !== "Active" || disablingId === employee.id}
                             onClick={() => disableEmployee(employee)}
                             className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-30"
                           >
@@ -510,9 +526,10 @@ function Employees() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800"
+                  disabled={isSaving}
+                  className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
                 >
-                  Add employee
+                  {isSaving ? "Adding..." : "Add employee"}
                 </button>
               </div>
             </form>

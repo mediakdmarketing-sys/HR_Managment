@@ -4,6 +4,9 @@ const leaves = firestore.collection("leaveRequests");
 const employees = firestore.collection("employees");
 const notifications = firestore.collection("notifications");
 
+const httpError = (statusCode, message) =>
+  Object.assign(new Error(message), { statusCode });
+
 const employeeById = async (id) => {
   const snapshot = await employees.doc(id).get();
   return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
@@ -70,6 +73,19 @@ export const createLeaveRequest = async ({
 }) => {
   const employee = await employeeById(employeeId);
   if (!employee) throw new Error("Employee not found");
+  // Also catches a double-clicked submit that reaches the server twice.
+  const existing = await leaves.where("employeeId", "==", employeeId).get();
+  const overlapping = existing.docs.some((doc) => {
+    const other = doc.data();
+    return (
+      ["Pending", "Approved"].includes(other.status) &&
+      other.startDate <= endDate &&
+      other.endDate >= startDate
+    );
+  });
+  if (overlapping) {
+    throw httpError(409, "You already have a pending or approved leave request for these dates");
+  }
   const reference = leaves.doc();
   const stored = await saveAttachment(reference.id, attachmentData);
   const request = {
@@ -116,7 +132,18 @@ export const updateLeaveStatus = async (id, status, reviewer) => {
   const request = snapshot.data();
   const employee = await employeeById(request.employeeId);
   if (!canReviewRequest(request, employee, reviewer)) return null;
-  await reference.update({ status });
+  // Check-and-set in a transaction so two clicks (or two reviewers) cannot both decide.
+  await firestore.runTransaction(async (transaction) => {
+    const current = await transaction.get(reference);
+    if (current.data().status !== "Pending") {
+      throw httpError(409, `This request was already ${current.data().status.toLowerCase()}`);
+    }
+    transaction.update(reference, {
+      status,
+      reviewedBy: reviewer.id,
+      reviewedAt: new Date().toISOString(),
+    });
+  });
   await notifications.doc().set({
     recipientEmployeeId: request.employeeId,
     type: status === "Approved" ? "leave_approved" : "leave_rejected",
