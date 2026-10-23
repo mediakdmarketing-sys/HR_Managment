@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import ThemeToggle from "./ThemeToggle";
 import {
   Bell,
   BellOff,
@@ -45,7 +46,8 @@ const NavBar = ({ notifications = [], onRead, onReadAll }) => {
   };
 
   return (
-    <header className="fixed right-6 top-5 z-40 flex justify-end sm:right-8">
+    <header className="fixed right-6 top-5 z-40 flex items-center justify-end gap-2 sm:right-8">
+      <ThemeToggle />
       <div className="relative">
         <button
           type="button"

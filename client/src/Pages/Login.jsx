@@ -71,7 +71,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 sm:p-6 flex items-center justify-center">
+    <div className="app-bg min-h-screen bg-slate-100 p-4 sm:p-6 flex items-center justify-center">
       <div className="w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl grid lg:grid-cols-2">
         {/* Left Side */}
         <div className="relative hidden overflow-hidden lg:flex">
