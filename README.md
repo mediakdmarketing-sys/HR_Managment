@@ -5,7 +5,7 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 - **Frontend:** React 19 + Vite + Tailwind CSS (`client/`), deployed on **Vercel**
 - **Backend:** Node.js + Express 5 (`server/`), deployed on **Render**
 - **Database & auth:** Firebase Authentication (email/password) + Cloud Firestore
-- **Letters:** generated as `.docx` in the browser and opened in **Google Docs** via the Google Drive API
+- **Letters:** offer and service letters generated as PDF in the browser with `@react-pdf/renderer`
 
 ---
 
@@ -17,10 +17,12 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 | **Dashboards** | HR sees live headcount, active employees, new joiners (added in the last 14 days), departures, people on leave today and pending leave approvals. Other roles see their own leave summary, profile, recent requests and upcoming leave. |
 | **Employee management** (HR) | Add, view, edit and disable employees. |
 | **Leave management** | Employees submit leave with an optional PDF/PNG/JPEG attachment (max 5 MB). Requests are approved or rejected according to the routing rules below. |
+| **Birthday reminders** (HR) | From 2 days before an employee's birthday (based on the date of birth in their profile), every HR user gets one "Upcoming birthday" notification. The check runs when HR's notifications load, at most once an hour, so it works on Render's free plan without a scheduled job. |
 | **Notifications** | The bell shows real notifications. New ones also appear as toasts (green for approved, red for rejected). The app checks for new ones every 10 seconds. |
-| **Letter templates** (HR) | Offer letter and service letter. HR uploads or replaces a company logo, which appears in the letter header. Each letter opens as a new Google Doc in the HR user's Drive, with yellow-highlighted `[placeholders]` to fill in. It can also be downloaded as `.docx`. |
+| **Letter templates** (HR) | Offer and service letters for any employee. HR sets the logo, an optional signature and the company details once. Picking an employee opens an editor pre-filled from their record, with a live preview of the exact PDF; every field and clause can be edited before downloading. |
+| **Expense tracker** (HR) | Record income and expense entries (name, description, value, date). Shows total income, total expenses and the net balance, with a from–to date range picker (presets: this month, last month, last 30 days, this year, all time). Entries can be edited or deleted. |
 | **Attendance** | Uses mock data for now. |
-| **Payroll** | Not built yet; still under discussion. |
+| **Payslips** | Payslips use the letterhead logo and company details. Earnings table: basic salary, full days, half days and other hours (count × rate), with gross pay. Counts come from mock data or an imported CSV (see `client/src/assets/samplePayslips.csv` for the columns). |
 
 ### Leave approval routing
 
@@ -48,7 +50,8 @@ HR_Portal/
 │   ├── src/components/     Sidebar, NavBar (notifications)
 │   ├── src/layouts/        UserLayout (notification polling)
 │   ├── src/api/            Axios API clients
-│   ├── src/utils/          auth helpers, letter templates (.docx), Google Docs upload
+│   ├── src/letters/        offer & service letter content and PDF layout
+│   ├── src/utils/          auth, session and theme helpers
 │   └── vercel.json         SPA rewrite so deep links work on refresh
 └── server/                 Express API (Render)
     ├── routes/ controllers/ services/
@@ -65,7 +68,8 @@ HR_Portal/
 | `leaveRequests` | Leave requests |
 | `leaveAttachments` | Attachment files, stored in chunks of about 900 KB (so Firebase Storage is not needed) |
 | `notifications` | In-app notifications |
-| `settings/letterLogo` | Company logo used in letter templates |
+| `transactions` | Expense tracker income and expense entries |
+| `settings/letterLogo`, `settings/letterSignature`, `settings/letterCompany` | Letterhead logo, authorised signature and company details used in letters |
 
 > Ticket-related files (`ticket.*`) are left over from an earlier project and are not used.
 
@@ -73,7 +77,7 @@ HR_Portal/
 
 ## Running locally
 
-**Requirements:** Node.js 20.19 or newer, a Firebase project, and a Google Cloud OAuth client (only needed for Google Docs).
+**Requirements:** Node.js 20.19 or newer and a Firebase project.
 
 ### 1. Firebase setup (once)
 
@@ -95,6 +99,7 @@ npm run dev               # http://localhost:5000 (restarts automatically on fil
 | Variable | Value |
 |---|---|
 | `PORT` | `5000` |
+| `BIRTHDAY_TIMEZONE` | Optional. Time zone used to decide "today" for birthday reminders (default `Asia/Colombo`). |
 | `CLIENT_URL` | Allowed frontend origin(s), comma-separated. Not needed locally, because localhost:5173 is always allowed. |
 | `FIREBASE_PROJECT_ID` | `project_id` from the service-account JSON |
 | `FIREBASE_CLIENT_EMAIL` | `client_email` from the service-account JSON |
@@ -116,21 +121,9 @@ npm run dev               # http://localhost:5173
 |---|---|
 | `VITE_API_URL` | `http://localhost:5000/api` |
 | `VITE_FIREBASE_*` | Values from the Firebase web app config |
-| `VITE_GOOGLE_CLIENT_ID` | OAuth client ID for Google Docs (see below). Without it, letters can only be downloaded as `.docx`. |
 | `VITE_SESSION_HOURS` | Optional. Maximum login session length in hours (default `12`). |
 
 > Vite reads `.env` only when it starts. Restart `npm run dev` after changing it.
-
-### 4. Google Docs for letter templates (once)
-
-1. Open the [Google Cloud Console](https://console.cloud.google.com/) and select the same project as Firebase.
-2. **APIs & Services → Library**: enable the **Google Drive API**.
-3. **Google Auth Platform → Branding**: set the app name and support email.
-4. **Google Auth Platform → Audience**: either add each HR user's Google account under **Test users**, or click **Publish app**. The app only uses the `drive.file` scope (files it creates itself), so Google does not require a review.
-5. **Google Auth Platform → Clients → Create client → Web application**:
-   - **Authorized JavaScript origins:** `http://localhost:5173`, plus your Vercel URL once deployed
-   - **Authorized redirect URIs:** leave empty (the app uses a popup to get a token)
-6. Copy the client ID into `VITE_GOOGLE_CLIENT_ID`.
 
 ---
 
@@ -179,20 +172,19 @@ Do the steps in this order. The frontend needs the backend URL, and the backend 
 | Where | What to add |
 |---|---|
 | **Render** → Environment | `CLIENT_URL=https://<your-app>.vercel.app` (no trailing slash; separate several with commas). Render redeploys automatically. |
-| **Google Auth Platform** → Clients → your web client → Authorized JavaScript origins | `https://<your-app>.vercel.app` (keep `http://localhost:5173`). The Client ID stays the same. It can take a few minutes to take effect. |
 | **Firebase Console** → Authentication → Settings → Authorized domains | `<your-app>.vercel.app` |
 | **Google Cloud** → APIs & Services → Credentials → *Browser key (auto created by Firebase)* | Only if the key has **HTTP referrer** restrictions: add `https://<your-app>.vercel.app/*` |
 
-The Render URL does **not** need to be added to Google Auth Platform or Firebase. Google Drive and Firebase Auth are called from the browser, not from the server.
+The Render URL does **not** need to be added to Firebase. Firebase Auth is called from the browser, not from the server.
 
-If you add a custom domain later, add it in the same four places.
+If you add a custom domain later, add it in the same places.
 
 ### Deployment checklist
 
 - [ ] `/api/health` on Render returns `{"success":true}`
 - [ ] Logging in on the Vercel URL works (if not, check the browser console for CORS errors, then check `CLIENT_URL`)
 - [ ] Refreshing a page such as `/leave` works (handled by `client/vercel.json`)
-- [ ] Letter templates open in Google Docs (if not: `origin_mismatch` means the JavaScript origin is missing; `access_denied` means the account is not a test user)
+- [ ] Letter templates: an offer letter preview appears and downloads as PDF
 
 ---
 

@@ -9,6 +9,7 @@ import {
   ChartSpline,
   FolderOutput,
   FileSignature,
+  Wallet,
   CreditCard,
   IdCardLanyard,
   UserRoundCog,
@@ -112,6 +113,7 @@ const Sidebar = () => {
                   ["/payslip", CreditCard, "Payroll & Payslips"],
                   ["/performance", ChartSpline, "Performance & Training"],
                   ["/templates", FileSignature, "Letter Templates"],
+                  ["/expenses", Wallet, "Expense Tracker"],
                 ]
               : []),
             ...(user?.role === "Manager" || user?.role === "Team Lead"

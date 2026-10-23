@@ -213,6 +213,24 @@ const ChartTooltip = ({ active, payload }) => {
   );
 };
 
+// Wraps long department names (e.g. "Digital Marketing") onto two lines under the bar.
+const DepartmentTick = ({ x, y, payload }) => {
+  const words = String(payload.value).split(" ");
+  const middle = Math.ceil(words.length / 2);
+  const lines = words.length > 1 && payload.value.length > 10
+    ? [words.slice(0, middle).join(" "), words.slice(middle).join(" ")]
+    : [payload.value];
+  return (
+    <text x={x} y={y + 14} textAnchor="middle" fill="var(--chart-axis)" fontSize={12}>
+      {lines.map((line, index) => (
+        <tspan key={line} x={x} dy={index === 0 ? 0 : 14}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+};
+
 const DepartmentChart = ({ employees }) => {
   const counts = employees.reduce((totals, employee) => {
     const department = employee.department || "Unassigned";
@@ -230,22 +248,38 @@ const DepartmentChart = ({ employees }) => {
   }
 
   return (
-    <div style={{ height: Math.max(180, data.length * 44 + 20) }}>
+    <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 0, right: 36, bottom: 0, left: 0 }}>
-          <CartesianGrid horizontal={false} stroke="var(--chart-grid)" />
-          <XAxis type="number" allowDecimals={false} hide />
-          <YAxis
-            type="category"
+        <BarChart data={data} margin={{ top: 24, right: 8, bottom: 4, left: -16 }}>
+          <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+          <XAxis
             dataKey="department"
-            width={110}
+            interval={0}
+            tickLine={false}
+            axisLine={{ stroke: "var(--chart-grid)" }}
+            height={44}
+            tick={<DepartmentTick />}
+          />
+          <YAxis
+            allowDecimals={false}
             tickLine={false}
             axisLine={false}
-            tick={{ fill: "var(--chart-axis)", fontSize: 13 }}
+            width={44}
+            tick={{ fill: "var(--chart-axis)", fontSize: 12 }}
           />
           <Tooltip cursor={{ fill: "var(--chart-grid)", opacity: 0.5 }} content={<ChartTooltip />} />
-          <Bar dataKey="count" fill="var(--chart-bar)" radius={[0, 4, 4, 0]} barSize={22}>
-            <LabelList dataKey="count" position="right" fill="var(--chart-axis)" fontSize={13} fontWeight={600} />
+          {/* Bars grow up from the axis when the dashboard loads. */}
+          <Bar
+            dataKey="count"
+            fill="var(--chart-bar)"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={56}
+            animationBegin={150}
+            animationDuration={900}
+            animationEasing="ease-out"
+            activeBar={{ fillOpacity: 0.85 }}
+          >
+            <LabelList dataKey="count" position="top" fill="var(--chart-axis)" fontSize={12} fontWeight={600} />
           </Bar>
         </BarChart>
       </ResponsiveContainer>

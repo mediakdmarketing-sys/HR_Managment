@@ -8,6 +8,7 @@ import userRoute from "./routes/user.route.js";
 import leaveRoute from "./routes/leave.route.js";
 import notificationRoute from "./routes/notification.route.js";
 import templateRoute from "./routes/template.route.js";
+import expenseRoute from "./routes/expense.route.js";
 import { initializeFirebaseData } from "./database/init.js";
 
 
@@ -39,6 +40,7 @@ app.use("/api/users", userRoute);
 app.use("/api/leaves", leaveRoute);
 app.use("/api/notifications", notificationRoute);
 app.use("/api/templates", templateRoute);
+app.use("/api/expenses", expenseRoute);
 
 
 

@@ -78,6 +78,9 @@ export const updateUserService = async (id, data) => {
   const allowed = [
     "name", "email", "department", "role", "status", "assignedTeamLead",
     "workingHours", "totalBreakHours", "monthlyTotalWorkingHours",
+    // Used to pre-fill offer and service letters.
+    "title", "designation", "address", "nationalId", "joiningDate", "lastWorkingDate",
+    "personalEmail", "phone", "dateOfBirth",
   ];
   const updates = Object.fromEntries(
     allowed.filter((field) => data[field] !== undefined).map((field) => [field, data[field]]),

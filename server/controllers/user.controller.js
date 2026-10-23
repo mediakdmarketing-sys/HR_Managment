@@ -1,5 +1,6 @@
 import * as userService
 from "../services/userService.js";
+import { resetBirthdayReminderCheck } from "../services/birthdayService.js";
 export const getUsers = async (
   req,
   res
@@ -88,12 +89,32 @@ export const getUserById = async (req, res) => {
   }
 };
 
+// Personal details are optional; when present they must be well formed.
+const personalDetailsError = ({ personalEmail, phone, dateOfBirth }) => {
+  if (personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail)) {
+    return "Personal email is not valid";
+  }
+  if (phone && !/^\+?[0-9\s()-]{7,20}$/.test(phone)) return "Phone number is not valid";
+  if (dateOfBirth) {
+    const date = new Date(`${dateOfBirth}T00:00:00`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) || Number.isNaN(date.getTime()) || date > new Date()) {
+      return "Date of birth is not valid";
+    }
+  }
+  return null;
+};
+
 export const updateUser = async (req, res) => {
   try {
+    const validationError = personalDetailsError(req.body);
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
     const user = await userService.updateUserService(req.params.id, req.body);
     if (!user) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
+    if (req.body.dateOfBirth !== undefined) resetBirthdayReminderCheck();
     return res.status(200).json({ success: true, data: user });
   } catch (error) {
     if (error.code === "23505") {

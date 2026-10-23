@@ -44,6 +44,7 @@ export const initializeFirebaseData = async () => {
       department: employee.department,
       status: employee.status,
       role: employee.role,
+      personlEmail: employee.personalEmail,
       assignedTeamLead: employee.assignedTeamLead,
       workingHours: employee.workingHours,
       totalBreakHours: employee.totalBreakHours,

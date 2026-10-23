@@ -46,6 +46,25 @@
 /* text-slate-300 itself is left alone: it is also used on the dark hero gradients. */
 .dark .disabled\:text-slate-300:disabled { color: #475569; }
 
+/* Native dropdowns: some selects have no background of their own, which left their option
+   lists see-through in dark mode. Give every select and option a solid surface. */
+.dark select {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+.dark option,
+.dark optgroup {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+.dark option:checked {
+  background-color: #115e59;
+  color: #ffffff;
+}
+.dark option:disabled {
+  color: #64748b;
+}
+
 /* Borders, dividers, rings */
 .dark .border-slate-100,
 .dark .border-slate-200 { border-color: #1e293b; }
@@ -93,6 +112,31 @@
 .dark .border-blue-200 { border-color: rgb(59 130 246 / 0.35); }
 .dark .bg-purple-100 { background-color: rgb(168 85 247 / 0.15); }
 .dark .text-purple-700 { color: #d8b4fe; }
+
+/* Date range calendar (react-day-picker) in the app's teal accent. The extra class beats
+   the library's own .rdp-root defaults, which load after this file. */
+.rdp-root.hr-day-picker {
+  --rdp-accent-color: #0f766e;
+  --rdp-accent-background-color: #ccfbf1;
+  --rdp-day-height: 38px;
+  --rdp-day-width: 38px;
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-width: 36px;
+  --rdp-months-gap: 1.5rem;
+  font-size: 0.875rem;
+}
+.hr-day-picker .rdp-months {
+  flex-wrap: nowrap;
+}
+.hr-day-picker .rdp-day_button {
+  font-weight: 500;
+}
+.dark .rdp-root.hr-day-picker {
+  --rdp-accent-color: #14b8a6;
+  --rdp-accent-background-color: rgb(20 184 166 / 0.18);
+  --rdp-range_start-color: #042f2e;
+  --rdp-range_end-color: #042f2e;
+}
 
 /* Keep the theme switch smooth without animating every page load. */
 html.theme-transition,

@@ -4,6 +4,7 @@ import ThemeToggle from "./ThemeToggle";
 import {
   Bell,
   BellOff,
+  Cake,
   Check,
   CircleCheck,
   CircleX,
@@ -15,6 +16,11 @@ const notificationStyles = {
   leave_request: { icon: FileCheck2, tone: "text-teal-700 bg-teal-50", path: "/leave" },
   leave_approved: { icon: CircleCheck, tone: "text-emerald-700 bg-emerald-50", path: "/leave" },
   leave_rejected: { icon: CircleX, tone: "text-red-700 bg-red-50", path: "/leave" },
+  birthday_reminder: {
+    icon: Cake,
+    tone: "text-purple-700 bg-purple-100",
+    path: (notification) => `/employees/${notification.entityId}`,
+  },
 };
 const defaultStyle = { icon: Bell, tone: "text-blue-700 bg-blue-50" };
 
@@ -38,7 +44,8 @@ const NavBar = ({ notifications = [], onRead, onReadAll }) => {
 
   const openNotification = (notification) => {
     if (!notification.isRead) onRead?.(notification.id);
-    const path = notificationStyles[notification.type]?.path;
+    const target = notificationStyles[notification.type]?.path;
+    const path = typeof target === "function" ? target(notification) : target;
     if (path) {
       setIsOpen(false);
       navigate(path);

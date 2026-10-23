@@ -6,15 +6,25 @@ import { getUserById } from "../api/userApi";
 
 const fields = [
   ["name", "Name"],
-  ["email", "Email"],
+  ["email", "Company Email"],
   ["role", "Role"],
   ["department", "Department"],
   ["status", "Status"],
   ["assignedTeamLead", "Assigned team lead"],
-  ["workingHours", "Working hours"],
-  ["totalBreakHours", "Total break hours"],
-  ["monthlyTotalWorkingHours", "Monthly total working hours"],
+  ["personalEmail", "Personal email"],
+  ["phone", "Phone number"],
+  ["dateOfBirth", "Date of birth"],
 ];
+
+const formatValue = (key, value) => {
+  if (!value) return "—";
+  if (key === "dateOfBirth") {
+    return new Intl.DateTimeFormat("en", { month: "long", day: "numeric", year: "numeric" }).format(
+      new Date(`${value}T00:00:00`),
+    );
+  }
+  return value;
+};
 
 export default function EmployeeDetails() {
   const { id } = useParams();
@@ -49,7 +59,7 @@ export default function EmployeeDetails() {
               {fields.map(([key, label]) => (
                 <div key={key} className="rounded-xl bg-slate-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-                  <p className="mt-2 font-medium text-slate-800">{employee[key] ?? "—"}</p>
+                  <p className="mt-2 font-medium text-slate-800">{formatValue(key, employee[key])}</p>
                 </div>
               ))}
             </div>

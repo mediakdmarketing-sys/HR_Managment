@@ -1,7 +1,16 @@
 import * as leaveService from "../services/leaveService.js";
+import { ensureBirthdayReminders } from "../services/birthdayService.js";
 
 export const listNotifications = async (req, res) => {
   try {
+    if (req.user.role === "HR") {
+      try {
+        await ensureBirthdayReminders();
+      } catch (error) {
+        // A failed reminder check must not stop notifications from loading.
+        console.error("Birthday reminder check failed:", error.message);
+      }
+    }
     const notifications = await leaveService.getNotifications(req.user.id);
     return res.json({ success: true, data: notifications });
   } catch (error) {

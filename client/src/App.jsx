@@ -12,6 +12,7 @@ import Payslip from "./Pages/Payslip";
 import Attendance from "./Pages/Attendance";
 import Performance from "./Pages/Performance";
 import Templates from "./Pages/Templates";
+import ExpenseTracker from "./Pages/ExpenseTracker";
 // import Profile from "./pages/Profile";
 import { ToastContainer } from "react-toastify";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -40,6 +41,7 @@ function App() {
           <Route element={<ProtectedRoute roles={["HR"]} />}>
             <Route path="/employees/:id/edit" element={<EmployeeEdit />}></Route>
             <Route path="/templates" element={<Templates />}></Route>
+            <Route path="/expenses" element={<ExpenseTracker />}></Route>
           </Route>
           <Route element={<ProtectedRoute roles={TEAM_ROLES} />}>
             <Route path="/attendance" element={<Attendance />}></Route>

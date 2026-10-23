@@ -11,6 +11,13 @@ const mockEmployees = [
     workingHours: 8,
     totalBreakHours: 1.1,
     monthlyTotalWorkingHours: 240,
+    phone: "+94 70 300 4100",
+    designation: "Team Lead",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 60000,
+    fullDays: 20,
+    halfDays: 0,
+    otherHours: 0,
   },
   {
     id: "EMP002",
@@ -24,6 +31,13 @@ const mockEmployees = [
     workingHours: 8,
     totalBreakHours: 1,
     monthlyTotalWorkingHours: 232,
+    phone: "+94 71 337 4363",
+    designation: "Project Manager",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 75000,
+    fullDays: 23,
+    halfDays: 2,
+    otherHours: 5,
   },
   {
     id: "EMP003",
@@ -37,6 +51,13 @@ const mockEmployees = [
     workingHours: 7.5,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 225,
+    phone: "+94 72 374 4626",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 21,
+    halfDays: 0,
+    otherHours: 10,
   },
   {
     id: "EMP004",
@@ -50,6 +71,13 @@ const mockEmployees = [
     workingHours: 8.5,
     totalBreakHours: 1.5,
     monthlyTotalWorkingHours: 255,
+    phone: "+94 73 411 4889",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 24,
+    halfDays: 2,
+    otherHours: 2,
   },
   {
     id: "EMP005",
@@ -63,6 +91,13 @@ const mockEmployees = [
     workingHours: 0,
     totalBreakHours: 0,
     monthlyTotalWorkingHours: 168,
+    phone: "+94 74 448 5152",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 22,
+    halfDays: 0,
+    otherHours: 7,
   },
   {
     id: "EMP006",
@@ -76,6 +111,13 @@ const mockEmployees = [
     workingHours: 6,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 210,
+    phone: "+94 75 485 5415",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 20,
+    halfDays: 2,
+    otherHours: 12,
   },
   {
     id: "EMP007",
@@ -89,6 +131,13 @@ const mockEmployees = [
     workingHours: 8,
     totalBreakHours: 1.2,
     monthlyTotalWorkingHours: 240,
+    phone: "+94 76 522 5678",
+    designation: "Team Lead",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 60000,
+    fullDays: 23,
+    halfDays: 0,
+    otherHours: 4,
   },
   {
     id: "EMP008",
@@ -102,6 +151,13 @@ const mockEmployees = [
     workingHours: 7,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 232,
+    phone: "+94 77 559 5941",
+    designation: "Project Manager",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 75000,
+    fullDays: 21,
+    halfDays: 2,
+    otherHours: 9,
   },
   {
     id: "EMP009",
@@ -115,6 +171,13 @@ const mockEmployees = [
     workingHours: 8.5,
     totalBreakHours: 1,
     monthlyTotalWorkingHours: 248,
+    phone: "+94 70 596 6204",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 24,
+    halfDays: 0,
+    otherHours: 1,
   },
   {
     id: "EMP010",
@@ -128,6 +191,13 @@ const mockEmployees = [
     workingHours: 0,
     totalBreakHours: 0,
     monthlyTotalWorkingHours: 176,
+    phone: "+94 71 633 6467",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 22,
+    halfDays: 2,
+    otherHours: 6,
   },
   {
     id: "EMP011",
@@ -141,6 +211,13 @@ const mockEmployees = [
     workingHours: 6.5,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 220,
+    phone: "+94 72 670 6730",
+    designation: "Talent Recruiter",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 45000,
+    fullDays: 20,
+    halfDays: 0,
+    otherHours: 11,
   },
   {
     id: "EMP012",
@@ -154,6 +231,13 @@ const mockEmployees = [
     workingHours: 8,
     totalBreakHours: 1,
     monthlyTotalWorkingHours: 240,
+    phone: "+94 73 707 6993",
+    designation: "HR Executive",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 50000,
+    fullDays: 23,
+    halfDays: 2,
+    otherHours: 3,
   },
   {
     id: "EMP013",
@@ -167,6 +251,13 @@ const mockEmployees = [
     workingHours: 9,
     totalBreakHours: 1.5,
     monthlyTotalWorkingHours: 260,
+    phone: "+94 74 744 7256",
+    designation: "Team Lead",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 60000,
+    fullDays: 21,
+    halfDays: 0,
+    otherHours: 8,
   },
   {
     id: "EMP014",
@@ -180,6 +271,13 @@ const mockEmployees = [
     workingHours: 7.5,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 230,
+    phone: "+94 75 781 7519",
+    designation: "Talent Recruiter",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 45000,
+    fullDays: 24,
+    halfDays: 2,
+    otherHours: 0,
   },
   {
     id: "EMP015",
@@ -193,6 +291,13 @@ const mockEmployees = [
     workingHours: 0,
     totalBreakHours: 0.8,
     monthlyTotalWorkingHours: 160,
+    phone: "+94 76 818 7782",
+    designation: "HR Executive",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 50000,
+    fullDays: 22,
+    halfDays: 0,
+    otherHours: 5,
   },
   {
     id: "EMP016",
@@ -206,6 +311,13 @@ const mockEmployees = [
     workingHours: 5,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 198,
+    phone: "+94 77 855 8045",
+    designation: "Finance Executive",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 50000,
+    fullDays: 20,
+    halfDays: 2,
+    otherHours: 10,
   },
   {
     id: "EMP017",
@@ -219,6 +331,13 @@ const mockEmployees = [
     workingHours: 4.5,
     totalBreakHours: 0.5,
     monthlyTotalWorkingHours: 205,
+    phone: "+94 70 892 8308",
+    designation: "Junior Full Stack Developer",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 40000,
+    fullDays: 23,
+    halfDays: 0,
+    otherHours: 2,
   },
   {
     id: "EMP018",
@@ -232,6 +351,13 @@ const mockEmployees = [
     workingHours: 8,
     totalBreakHours: 1,
     monthlyTotalWorkingHours: 238,
+    phone: "+94 71 929 8571",
+    designation: "Project Manager",
+    // Payroll counts for the current pay period (replaced by an imported CSV).
+    basicSalary: 75000,
+    fullDays: 21,
+    halfDays: 2,
+    otherHours: 7,
   },
 ];
 

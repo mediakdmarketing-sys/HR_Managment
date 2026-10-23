@@ -9,14 +9,27 @@ import {
   updateUser,
 } from "../api/userApi";
 
+// Optional details used to pre-fill offer and service letters.
+const letterFields = [
+  ["title", "Title", "select"],
+  ["designation", "Designation", "text"],
+  ["nationalId", "National ID card no.", "text"],
+  ["joiningDate", "Joining date", "date"],
+  ["lastWorkingDate", "Last working day", "date"],
+  ["address", "Address", "textarea"],
+];
+const TITLES = ["Mr.", "Ms.", "Mrs.", "Miss", "Dr."];
+
 const editableFields = [
   ["name", "Name", "text"],
-  ["email", "Email", "email"],
+  ["email", "Company Email", "email"],
   ["password", "New password (leave blank to keep current)", "password"],
-  ["workingHours", "Working hours", "number"],
-  ["totalBreakHours", "Total break hours", "number"],
-  ["monthlyTotalWorkingHours", "Monthly total working hours", "number"],
+  ["personalEmail", "Personal email", "email"],
+  ["phone", "Phone number", "tel"],
+  ["dateOfBirth", "Date of birth", "date"],
 ];
+// Existing employees may not have these yet, so they are not required.
+const optionalFields = ["password", "personalEmail", "phone", "dateOfBirth"];
 
 export default function EmployeeEdit() {
   const { id } = useParams();
@@ -118,7 +131,48 @@ export default function EmployeeEdit() {
                     </select>
                   ) : (
                     <input
-                      required={key !== "password"}
+                      required={!optionalFields.includes(key)}
+                      max={key === "dateOfBirth" ? new Date().toISOString().slice(0, 10) : undefined}
+                      placeholder={key === "phone" ? "+94 77 123 4567" : undefined}
+                      name={key}
+                      type={type}
+                      value={form[key] ?? ""}
+                      onChange={updateField}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                    />
+                  )}
+                </label>
+              ))}
+              <div className="border-t border-slate-200 pt-5 sm:col-span-2">
+                <h2 className="text-lg font-bold text-slate-800">Letter details</h2>
+                <p className="mt-1 text-sm text-slate-500">Optional. Used to pre-fill offer and service letters.</p>
+              </div>
+              {letterFields.map(([key, label, type]) => (
+                <label key={key} className={`text-sm font-semibold text-slate-700 ${type === "textarea" ? "sm:col-span-2" : ""}`}>
+                  {label}
+                  {type === "select" ? (
+                    <select
+                      name={key}
+                      value={form[key] ?? ""}
+                      onChange={updateField}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                    >
+                      <option value="">Not set</option>
+                      {TITLES.map((option) => (
+                        <option key={option}>{option}</option>
+                      ))}
+                    </select>
+                  ) : type === "textarea" ? (
+                    <textarea
+                      name={key}
+                      rows={3}
+                      value={form[key] ?? ""}
+                      onChange={updateField}
+                      placeholder="Street, city, country (one line per row)"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                    />
+                  ) : (
+                    <input
                       name={key}
                       type={type}
                       value={form[key] ?? ""}
