@@ -17,6 +17,9 @@ export const loginUser = async ({ email, password }) => {
   return API.post("/login", { idToken });
 };
 
+// Server-sent reset email whose link opens our /reset-password page.
+export const requestPasswordReset = (email) => API.post("/forgot-password", { email });
+
 export const logoutUser = () => {
   return API.post("/logout", {}, { withCredentials: true });
 };

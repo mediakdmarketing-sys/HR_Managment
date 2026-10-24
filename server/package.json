@@ -5,8 +5,8 @@
   "main": "functions.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node init && node index.js",
+    "dev": "node init && nodemon index.js",
     "migrate:firebase": "node scripts/migrate-postgres-to-firebase.js"
   },
   "keywords": [],
@@ -22,6 +22,7 @@
     "firebase-admin": "^13.7.0",
     "firebase-functions": "^7.0.0",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^6.10.1",
     "nodemon": "^3.1.14",
     "pg": "^8.23.1"
   },
