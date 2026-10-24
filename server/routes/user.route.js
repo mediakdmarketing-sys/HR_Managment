@@ -5,6 +5,10 @@ import {
   createUser,
   disableUser,
   getEmployeeOptions,
+  getAccountNumber,
+  getProfilePhoto,
+  removeProfilePhoto,
+  saveProfilePhoto,
   getUserById,
   getUsers,
   updateUser,
@@ -26,8 +30,13 @@ router.use(authMiddleware);
 router.get("/all", authorize(...directoryRoles), getUsers);
 router.get("/options", authorize(...directoryRoles), getEmployeeOptions);
 
+router.put("/me/photo", saveProfilePhoto);
+router.delete("/me/photo", removeProfilePhoto);
+
 router.post("/", authorize("HR"), createUser);
 router.get("/:id", selfOrDirectory, getUserById);
+router.get("/:id/account-number", getAccountNumber);
+router.get("/:id/photo", selfOrDirectory, getProfilePhoto);
 router.patch("/:id", authorize("HR"), updateUser);
 router.patch("/:id/disable", authorize("HR"), disableUser);
 

@@ -1,18 +1,17 @@
 import { useState } from "react";
 import {
+  ChevronRight,
   LayoutDashboard,
   LogOut,
   Menu,
   X,
   SquareDashedKanban,
   Timer,
-  ChartSpline,
   FolderOutput,
   FileSignature,
   Wallet,
   CreditCard,
   IdCardLanyard,
-  UserRoundCog,
   UserRoundSearch,
   UsersRound,
 } from "lucide-react";
@@ -20,6 +19,8 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { logoutUser } from "../api/authApi";
 import { clearSession, getUser } from "../utils/auth";
+import { useMyPhoto } from "../utils/profilePhoto";
+import Avatar from "./Avatar";
 
 const Sidebar = () => {
   const user = getUser();
@@ -28,6 +29,7 @@ const Sidebar = () => {
   const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
+  const photo = useMyPhoto();
 
   const logout = async () => {
     try {
@@ -111,7 +113,7 @@ const Sidebar = () => {
                   ["/attendance", Timer, "Attendance & Work Hours"],
                   ["/leave", FolderOutput, "Leave Management"],
                   ["/payslip", CreditCard, "Payroll & Payslips"],
-                  ["/performance", ChartSpline, "Performance & Training"],
+                  // ["/performance", ChartSpline, "Performance & Training"],
                   ["/templates", FileSignature, "Letter Templates"],
                   ["/expenses", Wallet, "Expense Tracker"],
                 ]
@@ -121,7 +123,7 @@ const Sidebar = () => {
                   ["/employees", UsersRound, "Team Employees"],
                   ["/attendance", Timer, "Attendance & Work Hours"],
                   ["/leave", FolderOutput, "Leave Management"],
-                  ["/performance", ChartSpline, "Performance & Training"],
+                  // ["/performance", ChartSpline, "Performance & Training"],
                 ]
               : []),
             ...(user?.role === "Recruiter"
@@ -142,8 +144,8 @@ const Sidebar = () => {
               ? [
                   ["/attendance", Timer, "My Attendance"],
                   ["/leave", FolderOutput, "My Leave"],
-                  ["/payslip", CreditCard, "My Payslips"],
-                  ["/performance", ChartSpline, "My Performance"],
+                  // ["/payslip", CreditCard, "My Payslips"],
+                  // ["/performance", ChartSpline, "My Performance"],
                 ]
               : []),
           ].map(([path, Icon, label]) => (
@@ -169,11 +171,16 @@ const Sidebar = () => {
         </nav>
 
         <div className="mx-4 mb-2 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-content-center rounded-full bg-linear-to-br from-slate-800 to-teal-600 text-lg font-bold text-white">
-              {user?.name?.trim()?.charAt(0)?.toUpperCase() || "U"}
-            </div>
-            <div className="min-w-0">
+          <Link
+            to="/profile"
+            onClick={closeSidebar}
+            title="My profile"
+            className={`-m-1 flex items-center gap-3 rounded-lg p-1 transition hover:bg-slate-100 ${
+              location.pathname === "/profile" ? "bg-teal-50" : ""
+            }`}
+          >
+            <Avatar name={user?.name} photo={photo} />
+            <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-700">
                 {user?.name || "User"}
               </p>
@@ -183,7 +190,8 @@ const Sidebar = () => {
                 </p>
               )}
             </div>
-          </div>
+            <ChevronRight size={18} className="shrink-0 text-slate-400" />
+          </Link>
 
           <button
             onClick={requestLogout}

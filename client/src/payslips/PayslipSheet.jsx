@@ -64,9 +64,9 @@ const PayslipSheet = ({ payslip, letterhead }) => {
             </tr>
           ))}
           <tr className="ps-gross">
-            <td>Gross pay</td>
+            <td>Total</td>
             <td className="ps-count" />
-            <td className="ps-amount">{formatMoney(payslip.grossPay)}</td>
+            <td className="ps-amount">{formatMoney(payslip.total)}</td>
           </tr>
         </tbody>
       </table>

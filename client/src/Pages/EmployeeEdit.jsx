@@ -1,13 +1,20 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Loader2, LockKeyhole } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import UserLayout from "../layouts/UserLayout";
 import {
+  getAccountNumber,
   getEmployeeOptions,
   getUserById,
   updateUser,
 } from "../api/userApi";
+import PasswordConfirmDialog from "../components/PasswordConfirmDialog";
+import { OTHER_BANK, bankOptions } from "../utils/bank";
+import { isReauthRequired } from "../utils/reauth";
+
+// Which dropdown option a saved bank name belongs to; unknown names are "Others".
+const bankChoiceFor = (bankName, banks) => (!bankName ? "" : banks.includes(bankName) ? bankName : OTHER_BANK);
 
 // Optional details used to pre-fill offer and service letters.
 const letterFields = [
@@ -38,11 +45,17 @@ export default function EmployeeEdit() {
   const [options, setOptions] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [bankChoice, setBankChoice] = useState("");
+  // The account number stays masked until HR re-enters their password.
+  const [accountUnlocked, setAccountUnlocked] = useState(false);
+  const [isUnlocking, setIsUnlocking] = useState(false);
+  const [confirmFor, setConfirmFor] = useState(null);
 
   useEffect(() => {
     Promise.all([getUserById(id), getEmployeeOptions()])
       .then(([employeeResponse, optionsResponse]) => {
         setForm({ ...employeeResponse.data.data, password: "" });
+        setBankChoice(bankChoiceFor(employeeResponse.data.data.bankName, bankOptions(optionsResponse.data.data.banks)));
         setOptions(optionsResponse.data.data);
       })
       .catch((requestError) =>
@@ -58,6 +71,18 @@ export default function EmployeeEdit() {
     }));
   };
 
+  const chooseBank = (event) => {
+    const choice = event.target.value;
+    setBankChoice(choice);
+    // "Others" starts empty so HR types the bank name; a listed bank is saved as-is.
+    setForm((current) => ({
+      ...current,
+      bankName: choice === OTHER_BANK ? (banks.includes(current.bankName) ? "" : current.bankName || "") : choice,
+    }));
+  };
+
+  const banks = bankOptions(options?.banks);
+
   const selectFields = {
     role: ["Role", options?.roles || []],
     department: ["Department", options?.departments || []],
@@ -68,24 +93,54 @@ export default function EmployeeEdit() {
     ],
   };
 
-  const save = async (event) => {
-    event.preventDefault();
+  const loadAccountNumber = async () => {
+    const response = await getAccountNumber(id);
+    setForm((current) => ({ ...current, accountNumber: response.data.data.accountNumber }));
+    setAccountUnlocked(true);
+  };
+
+  const unlockAccountNumber = async () => {
+    setIsUnlocking(true);
+    try {
+      await loadAccountNumber();
+    } catch (requestError) {
+      if (isReauthRequired(requestError)) setConfirmFor("unlock");
+      else setError(requestError.response?.data?.message || "Unable to load the account number.");
+    } finally {
+      setIsUnlocking(false);
+    }
+  };
+
+  const submit = async () => {
     setSaving(true);
     setError("");
     const payload = { ...form };
     if (!payload.password) delete payload.password;
     delete payload.id;
     delete payload.createdAt;
+    delete payload.accountNumberMasked;
+    // A typed name that matches a listed bank (ignoring case) is saved with the listed spelling.
+    const typedBank = String(payload.bankName || "").trim().toLowerCase();
+    payload.bankName = banks.find((bank) => bank.toLowerCase() === typedBank) || payload.bankName;
+    // Only send the account number when it was unlocked (and so possibly changed).
+    if (!accountUnlocked) delete payload.accountNumber;
 
     try {
       await updateUser(id, payload);
       toast.success("Employee updated successfully", { theme: "dark" });
       navigate(`/employees/${id}`);
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Unable to update employee.");
+      // The password confirmation is only valid for a few minutes; ask again, then retry.
+      if (isReauthRequired(requestError)) setConfirmFor("save");
+      else setError(requestError.response?.data?.message || "Unable to update employee.");
     } finally {
       setSaving(false);
     }
+  };
+
+  const save = (event) => {
+    event.preventDefault();
+    if (!saving) submit();
   };
 
   return (
@@ -182,6 +237,71 @@ export default function EmployeeEdit() {
                   )}
                 </label>
               ))}
+              <div className="border-t border-slate-200 pt-5 sm:col-span-2">
+                <h2 className="text-lg font-bold text-slate-800">Bank details</h2>
+                <p className="mt-1 text-sm text-slate-500">Optional. Used for salary payments.</p>
+              </div>
+              <label className="text-sm font-semibold text-slate-700">
+                Bank name
+                <select
+                  value={bankChoice}
+                  onChange={chooseBank}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="">Not set</option>
+                  {[...banks, OTHER_BANK].map((bank) => (
+                    <option key={bank}>{bank}</option>
+                  ))}
+                </select>
+              </label>
+              {bankChoice === OTHER_BANK && (
+                <label className="text-sm font-semibold text-slate-700">
+                  Other bank name
+                  <input
+                    required
+                    autoFocus
+                    name="bankName"
+                    maxLength={80}
+                    value={form.bankName ?? ""}
+                    onChange={updateField}
+                    placeholder="Enter the bank name"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  />
+                </label>
+              )}
+              <div className={`text-sm font-semibold text-slate-700 ${bankChoice === OTHER_BANK ? "sm:col-span-2" : ""}`}>
+                <label htmlFor="accountNumber">Account number</label>
+                {accountUnlocked ? (
+                  <input
+                    id="accountNumber"
+                    name="accountNumber"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    pattern="[0-9 \-]{6,24}"
+                    title="6 to 20 digits"
+                    value={form.accountNumber ?? ""}
+                    onChange={updateField}
+                    placeholder="e.g. 1234567890"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal tracking-wide outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  />
+                ) : (
+                  <div className="mt-1 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
+                    <span className="font-mono font-normal tracking-wider text-slate-600">
+                      {form.accountNumberMasked || "Not set"}
+                    </span>
+                    <button
+                      id="accountNumber"
+                      type="button"
+                      onClick={unlockAccountNumber}
+                      disabled={isUnlocking}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-50"
+                    >
+                      {isUnlocking ? <Loader2 className="animate-spin" size={14} /> : <LockKeyhole size={14} />}
+                      {form.accountNumberMasked ? "Unlock to edit" : "Unlock to add"}
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="flex justify-end gap-3 sm:col-span-2">
                 <button type="button" onClick={() => navigate(`/employees/${id}`)} className="rounded-xl px-5 py-3 font-semibold text-slate-600 hover:bg-slate-100">
                   Cancel
@@ -196,6 +316,22 @@ export default function EmployeeEdit() {
           ) : null}
         </section>
       </div>
+      {confirmFor && (
+        <PasswordConfirmDialog
+          description={
+            confirmFor === "save"
+              ? "Your password confirmation has expired. Re-enter it to save the account number."
+              : "Re-enter your password to view and edit this account number."
+          }
+          onClose={() => setConfirmFor(null)}
+          onConfirmed={async () => {
+            const action = confirmFor;
+            setConfirmFor(null);
+            if (action === "save") await submit();
+            else await loadAccountNumber();
+          }}
+        />
+      )}
     </UserLayout>
   );
 }

@@ -9,6 +9,9 @@ import leaveRoute from "./routes/leave.route.js";
 import notificationRoute from "./routes/notification.route.js";
 import templateRoute from "./routes/template.route.js";
 import expenseRoute from "./routes/expense.route.js";
+import payrollRoute from "./routes/payroll.route.js";
+import payslipShareRoute from "./routes/payslipShare.route.js";
+import aiRoute from "./routes/ai.route.js";
 import { initializeFirebaseData } from "./database/init.js";
 
 
@@ -41,6 +44,9 @@ app.use("/api/leaves", leaveRoute);
 app.use("/api/notifications", notificationRoute);
 app.use("/api/templates", templateRoute);
 app.use("/api/expenses", expenseRoute);
+app.use("/api/payroll", payrollRoute);
+app.use("/api/payslips", payslipShareRoute);
+app.use("/api/ai", aiRoute);
 
 
 

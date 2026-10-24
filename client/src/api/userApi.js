@@ -27,3 +27,8 @@ export const getEmployeeOptions = () => axios.get(`${API}/options`);
 export const updateUser = (id, userData) => axios.patch(`${API}/${id}`, userData);
 
 export const disableUser = (id) => axios.patch(`${API}/${id}/disable`);
+// Full account number; the server requires a recently confirmed password.
+export const getAccountNumber = (id) => axios.get(`${API}/${id}/account-number`);
+export const getProfilePhoto = (id) => axios.get(`${API}/${id}/photo`);
+export const saveProfilePhoto = (photo) => axios.put(`${API}/me/photo`, photo);
+export const removeProfilePhoto = () => axios.delete(`${API}/me/photo`);

@@ -1,6 +1,8 @@
 import { firebaseAuth, firestore } from "../config/firebase.js";
 
 const employeeCollection = firestore.collection("employees");
+// Bank names typed under "Others", so they appear in the bank dropdown next time.
+const savedBanksDoc = firestore.collection("settings").doc("banks");
 
 const toEmployee = (snapshot) => ({ id: snapshot.id, ...snapshot.data() });
 
@@ -18,7 +20,10 @@ export const getEmployeeOptionsService = async () => {
   const snapshot = await employeeCollection.get();
   const employees = snapshot.docs.map(toEmployee);
   const unique = (key) => [...new Set(employees.map((employee) => employee[key]).filter(Boolean))].sort();
+  const savedBanks = (await savedBanksDoc.get()).data()?.names || [];
   return {
+    // Includes names saved on employees before the list existed.
+    banks: [...new Set([...savedBanks, ...unique("bankName")])],
     roles: unique("role"),
     departments: unique("department"),
     statuses: unique("status"),
@@ -81,6 +86,7 @@ export const updateUserService = async (id, data) => {
     // Used to pre-fill offer and service letters.
     "title", "designation", "address", "nationalId", "joiningDate", "lastWorkingDate",
     "personalEmail", "phone", "dateOfBirth",
+    "bankName", "accountNumber",
   ];
   const updates = Object.fromEntries(
     allowed.filter((field) => data[field] !== undefined).map((field) => [field, data[field]]),
@@ -103,3 +109,28 @@ export const disableUserService = async (id) => {
   await firebaseAuth.updateUser(snapshot.data().uid, { disabled: true });
   return getUserByIdService(id);
 };
+
+// Adds a bank name to the saved list unless it is already there (ignoring case).
+export const rememberBankName = async (bankName) => {
+  const name = String(bankName || "").trim();
+  if (!name) return;
+  await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(savedBanksDoc);
+    const names = snapshot.data()?.names || [];
+    if (names.some((saved) => saved.toLowerCase() === name.toLowerCase())) return;
+    transaction.set(savedBanksDoc, { names: [...names, name].sort((a, b) => a.localeCompare(b)) });
+  });
+};
+
+// Profile photos live in their own collection so employee lists stay small.
+const profilePhotos = firestore.collection("profilePhotos");
+
+export const getProfilePhotoService = async (id) => {
+  const snapshot = await profilePhotos.doc(id).get();
+  return snapshot.exists ? { mime: snapshot.data().mime, data: snapshot.data().data } : null;
+};
+
+export const saveProfilePhotoService = (id, photo) =>
+  profilePhotos.doc(id).set({ ...photo, updatedAt: new Date().toISOString() });
+
+export const removeProfilePhotoService = (id) => profilePhotos.doc(id).delete();

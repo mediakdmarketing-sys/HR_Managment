@@ -21,8 +21,11 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 | **Notifications** | The bell shows real notifications. New ones also appear as toasts (green for approved, red for rejected). The app checks for new ones every 10 seconds. |
 | **Letter templates** (HR) | Offer and service letters for any employee. HR sets the logo, an optional signature and the company details once. Picking an employee opens an editor pre-filled from their record, with a live preview of the exact PDF; every field and clause can be edited before downloading. |
 | **Expense tracker** (HR) | Record income and expense entries (name, description, value, date). Shows total income, total expenses and the net balance, with a from–to date range picker (presets: this month, last month, last 30 days, this year, all time). Entries can be edited or deleted. |
+| **Passwords** | **Forgot password** on the login page emails a reset link (sent by Firebase) that opens `/reset-password` to choose a new password. Logged-in users change their password from their profile page (current password required). |
+| **My profile** | Clicking your name at the bottom of the sidebar opens `/profile`: upload, change or remove a profile photo (cropped to a square and shrunk in the browser), see your name, company email and personal email (read-only; HR changes them), and change your password. The photo also shows in the sidebar and on the dashboard. |
+| **HR AI assistant** (HR) | Chat button at the bottom right of every page. Answers questions about employees, leave, expenses and payroll, and explains how to use the portal, using Google Gemini (free tier). Each question sends Gemini a summary of the current data, which leaves out bank details, national IDs, addresses, phone numbers, personal emails and leave reasons. It can't change data. |
 | **Attendance** | Uses mock data for now. |
-| **Payslips** | Payslips use the letterhead logo and company details. Earnings table: basic salary, full days, half days and other hours (count × rate), with gross pay. Counts come from mock data or an imported CSV (see `client/src/assets/samplePayslips.csv` for the columns). |
+| **Payroll & payslips** (HR, Finance) | Pick a month, then for each employee: **Add/Edit** the full days, half days and lagging hours (count × editable rate: defaults LKR 1,000 / 500 / 100) plus a monthly increment. Rates and the increment carry over to the following months. **View & print** shows the payslip with the letterhead. **WhatsApp** opens a WhatsApp Web chat with the employee (from the phone number in their profile) with a short message containing a private link to the payslip PDF (valid 30 days; a new link replaces the old one). Payslip numbers look like `999DI4821`: company code, first 2 letters of the department, and 4 random digits that are unique within the department. |
 
 ### Leave approval routing
 
@@ -36,7 +39,7 @@ No one can approve their own request. The requester is notified when a decision 
 ### Access control
 
 - **Pages:** every page except `/` and `/login` requires login. Each page is limited to the roles that see it in the sidebar. Other URLs redirect to the dashboard.
-- **API:** all `/api` routes (except `/api/auth` and `/api/health`) require a valid Firebase ID token. Adding, editing and disabling employees is HR only. The employee directory is limited to HR, Managers, Team Leads and Recruiters. Everyone can read their own record.
+- **API:** all `/api` routes (except `/api/auth`, `/api/health` and the payslip links `/api/payslips/<token>`) require a valid Firebase ID token. Adding, editing and disabling employees is HR only. The employee directory is limited to HR, Managers, Team Leads and Recruiters. Everyone can read their own record.
 - **Sessions:** Firebase ID tokens always expire after 1 hour, so the client requests a fresh token from Firebase before each API call. A session lasts until logout, or `VITE_SESSION_HOURS` (default 12 hours), whichever comes first. An expired or rejected session sends the user back to the login page.
 
 ---
@@ -69,6 +72,11 @@ HR_Portal/
 | `leaveAttachments` | Attachment files, stored in chunks of about 900 KB (so Firebase Storage is not needed) |
 | `notifications` | In-app notifications |
 | `transactions` | Expense tracker income and expense entries |
+| `payrollRecords` | Monthly payroll per employee (document ID `<employeeId>_<YYYY-MM>`) |
+| `payslipNumbers`, `payslipCodes` | Each employee's payslip number, and the codes used per department (keeps them unique) |
+| `payslipShares` | Payslip PDFs behind the private WhatsApp links (expire after 30 days) |
+| `profilePhotos` | Profile photos (document ID = employee ID) |
+| `settings/banks` | Bank names typed under "Others", shown in the bank dropdown afterwards |
 | `settings/letterLogo`, `settings/letterSignature`, `settings/letterCompany` | Letterhead logo, authorised signature and company details used in letters |
 
 > Ticket-related files (`ticket.*`) are left over from an earlier project and are not used.
@@ -87,6 +95,8 @@ HR_Portal/
 4. **Project settings → Service accounts → Generate new private key.** This downloads a JSON file with the backend credentials. Never commit it.
 5. **Project settings → General → Your apps**: add a **Web app** and copy its config values (for the frontend).
 
+6. **Authentication → Templates → Password reset**: click the pencil, then **Customize action URL** and enter `https://<your-app>.vercel.app/reset-password` (for local testing, `http://localhost:5173/reset-password`). Optionally change the sender name, reply-to address and subject here too.
+
 ### 2. Backend
 
 ```bash
@@ -99,6 +109,10 @@ npm run dev               # http://localhost:5000 (restarts automatically on fil
 | Variable | Value |
 |---|---|
 | `PORT` | `5000` |
+| `PAYSLIP_COMPANY_CODE` | Optional. Company code at the start of payslip numbers (default `999`). |
+| `GEMINI_API_KEY` | Optional. Free key from [Google AI Studio](https://aistudio.google.com/apikey) for the HR AI assistant. |
+| `GEMINI_MODEL` | Optional. Main Gemini model (default `gemini-3.5-flash`). |
+| `GEMINI_FALLBACK_MODEL` | Optional. Used when the main model is slow or busy (default `gemini-flash-lite-latest`). |
 | `BIRTHDAY_TIMEZONE` | Optional. Time zone used to decide "today" for birthday reminders (default `Asia/Colombo`). |
 | `CLIENT_URL` | Allowed frontend origin(s), comma-separated. Not needed locally, because localhost:5173 is always allowed. |
 | `FIREBASE_PROJECT_ID` | `project_id` from the service-account JSON |
@@ -196,4 +210,6 @@ If you add a custom domain later, add it in the same places.
 
 ## Known limitations / next steps
 
-- Attendance uses mock data; payroll is not implemented yet.
+- Attendance uses mock data.
+- The AI assistant uses Gemini's free tier: small daily limits, and Google may use free-tier prompts to improve its products. Use a paid key for production.
+- WhatsApp Web links cannot attach files, so the message carries a link to the PDF instead. Sending the PDF itself as an attachment would need the WhatsApp Business API.

@@ -35,6 +35,12 @@ export const clearSession = async () => {
   localStorage.removeItem("user");
   localStorage.removeItem("sessionStartedAt");
   try {
+    // The HR assistant's conversation must not carry over to the next person who logs in.
+    sessionStorage.removeItem("hr-ai-chat");
+  } catch {
+    // Storage may be unavailable; nothing to clear then.
+  }
+  try {
     await signOut(firebaseAuth);
   } catch {
     // Local session data is already cleared.

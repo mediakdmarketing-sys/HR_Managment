@@ -3,6 +3,7 @@ import { toast } from "react-toastify";
 import Sidebar from "../components/Sidebar";
 import { getUser } from "../utils/auth";
 import NavBar from "../components/NavBar";
+import AiAssistant from "../components/AiAssistant";
 import {
   getNotifications,
   markAllNotificationsRead,
@@ -112,6 +113,7 @@ const UserLayout = ({ children }) => {
         />
         {children}
       </div>
+      {getUser()?.role === "HR" && <AiAssistant />}
     </div>
   );
 };

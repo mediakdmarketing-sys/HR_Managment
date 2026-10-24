@@ -9,11 +9,13 @@ import EmployeeDetails from "./Pages/EmployeeDetails";
 import EmployeeEdit from "./Pages/EmployeeEdit";
 import Leave from "./Pages/Leave";
 import Payslip from "./Pages/Payslip";
+import ForgotPassword from "./Pages/ForgotPassword";
+import ResetPassword from "./Pages/ResetPassword";
 import Attendance from "./Pages/Attendance";
 import Performance from "./Pages/Performance";
 import Templates from "./Pages/Templates";
 import ExpenseTracker from "./Pages/ExpenseTracker";
-// import Profile from "./pages/Profile";
+import Profile from "./Pages/Profile";
 import { ToastContainer } from "react-toastify";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -29,10 +31,13 @@ function App() {
         <Routes>
           <Route path="/" element={<Home />}></Route>
           <Route path="/login" element={<Login />}></Route>
+          <Route path="/forgot-password" element={<ForgotPassword />}></Route>
+          <Route path="/reset-password" element={<ResetPassword />}></Route>
 
           {/* Roles match the links each role sees in the sidebar. */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<Dashboard />}></Route>
+            <Route path="/profile" element={<Profile />}></Route>
           </Route>
           <Route element={<ProtectedRoute roles={DIRECTORY_ROLES} />}>
             <Route path="/employees" element={<Employees />}></Route>
@@ -48,7 +53,7 @@ function App() {
             <Route path="/leave" element={<Leave />}></Route>
             <Route path="/performance" element={<Performance />}></Route>
           </Route>
-          <Route element={<ProtectedRoute roles={["HR", "Finance", "Employee"]} />}>
+          <Route element={<ProtectedRoute roles={["HR", "Finance"]} />}>
             <Route path="/payslip" element={<Payslip />}></Route>
           </Route>
 

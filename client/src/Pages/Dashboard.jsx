@@ -32,6 +32,8 @@ import UserLayout from "../layouts/UserLayout";
 import { getUser } from "../utils/auth";
 import { getUserById, getUsers } from "../api/userApi";
 import { getLeaveRequests } from "../api/leaveApi";
+import Avatar from "../components/Avatar";
+import { useMyPhoto } from "../utils/profilePhoto";
 
 const NEW_JOINER_DAYS = 14;
 
@@ -468,6 +470,7 @@ const HrDashboard = ({ user }) => {
 };
 
 const EmployeeDashboard = ({ user }) => {
+  const photo = useMyPhoto();
   const [loadedAt] = useState(() => Date.now());
   const currentEmployeeId = user?._id ?? user?.id;
   const {
@@ -558,9 +561,7 @@ const EmployeeDashboard = ({ user }) => {
       <div className="grid gap-6 xl:grid-cols-3">
         <Panel title="My profile" description="Your details in the employee directory." icon={Users}>
           <div className="mb-5 flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
-            <div className="grid h-14 w-14 shrink-0 place-content-center rounded-2xl bg-linear-to-br from-slate-800 to-teal-600 text-xl font-bold text-white">
-              {user?.name?.trim()?.charAt(0)?.toUpperCase() || "U"}
-            </div>
+            <Avatar name={user?.name} photo={photo} className="h-14 w-14 rounded-2xl text-xl" />
             <div className="min-w-0">
               <p className="truncate font-bold text-slate-800">{user?.name || "—"}</p>
               <p className="truncate text-sm text-slate-500">{employee?.email || user?.email}</p>

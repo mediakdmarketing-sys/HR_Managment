@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Ticket, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { loginUser } from "../api/authApi";
-import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { clearSession, isLoggedIn, startSession } from "../utils/auth";
 import { toast } from "react-toastify";
 
@@ -181,9 +181,9 @@ export default function Login() {
           </form>
 
           <div className="flex justify-between mt-5 text-sm text-slate-500">
-            <a href="/dashboard" className="text-teal-700 hover:text-teal-800">
+            <Link to="/forgot-password" className="text-teal-700 hover:text-teal-800">
               Forgot Password?
-            </a>
+            </Link>
 
             <a href="/register" className="text-slate-600 hover:text-slate-900">
               Register
