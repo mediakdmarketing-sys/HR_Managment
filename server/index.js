@@ -13,18 +13,12 @@ import payrollRoute from "./routes/payroll.route.js";
 import payslipShareRoute from "./routes/payslipShare.route.js";
 import aiRoute from "./routes/ai.route.js";
 import { initializeFirebaseData } from "./database/init.js";
+import { allowedOrigins } from "./config/origins.js";
 
 
 const app = express();
-// CLIENT_URL is a comma-separated list of allowed frontend origins (e.g. the Vercel URL).
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173", "https://hr-managment-olive.vercel.app",
-  ...(process.env.CLIENT_URL || "")
-    .split(",")
-    .map((origin) => origin.trim().replace(/\/$/, ""))
-    .filter(Boolean),
-];
+// Render sits behind one proxy; this makes req.ip the visitor's address (used for rate limits).
+app.set("trust proxy", 1);
 app.use(
   cors({
     origin: allowedOrigins,

@@ -21,7 +21,7 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 | **Notifications** | The bell shows real notifications. New ones also appear as toasts (green for approved, red for rejected). The app checks for new ones every 10 seconds. |
 | **Letter templates** (HR) | Offer and service letters for any employee. HR sets the logo, an optional signature and the company details once. Picking an employee opens an editor pre-filled from their record, with a live preview of the exact PDF; every field and clause can be edited before downloading. |
 | **Expense tracker** (HR) | Record income and expense entries (name, description, value, date). Shows total income, total expenses and the net balance, with a from–to date range picker (presets: this month, last month, last 30 days, this year, all time). Entries can be edited or deleted. |
-| **Passwords** | **Forgot password** on the login page emails a reset link (sent by Firebase) that opens `/reset-password` to choose a new password. Logged-in users change their password from their profile page (current password required). |
+| **Passwords** | **Forgot password** on the login page emails a reset link that opens `/reset-password` to choose a new password. The server sends this email through your own email account (SMTP settings below), because Firebase doesn't let this project change where its own reset links go. Without SMTP settings it falls back to Firebase's email and Firebase's reset page. Logged-in users change their password from their profile page (current password required). |
 | **My profile** | Clicking your name at the bottom of the sidebar opens `/profile`: upload, change or remove a profile photo (cropped to a square and shrunk in the browser), see your name, company email and personal email (read-only; HR changes them), and change your password. The photo also shows in the sidebar and on the dashboard. |
 | **HR AI assistant** (HR) | Chat button at the bottom right of every page. Answers questions about employees, leave, expenses and payroll, and explains how to use the portal, using Google Gemini (free tier). Each question sends Gemini a summary of the current data, which leaves out bank details, national IDs, addresses, phone numbers, personal emails and leave reasons. It can't change data. |
 | **Attendance** | Uses mock data for now. |
@@ -95,7 +95,6 @@ HR_Portal/
 4. **Project settings → Service accounts → Generate new private key.** This downloads a JSON file with the backend credentials. Never commit it.
 5. **Project settings → General → Your apps**: add a **Web app** and copy its config values (for the frontend).
 
-6. **Authentication → Templates → Password reset**: click the pencil, then **Customize action URL** and enter `https://<your-app>.vercel.app/reset-password` (for local testing, `http://localhost:5173/reset-password`). Optionally change the sender name, reply-to address and subject here too.
 
 ### 2. Backend
 
@@ -113,6 +112,8 @@ npm run dev               # http://localhost:5000 (restarts automatically on fil
 | `GEMINI_API_KEY` | Optional. Free key from [Google AI Studio](https://aistudio.google.com/apikey) for the HR AI assistant. |
 | `GEMINI_MODEL` | Optional. Main Gemini model (default `gemini-3.5-flash`). |
 | `GEMINI_FALLBACK_MODEL` | Optional. Used when the main model is slow or busy (default `gemini-flash-lite-latest`). |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Optional. Email account for password reset emails. Gmail: `smtp.gmail.com`, `465`, the Gmail address, and an [app password](https://myaccount.google.com/apppasswords) (needs 2-Step Verification). |
+| `MAIL_FROM_NAME` | Optional. Sender name on emails (default `KD Marketing Group HR`). |
 | `BIRTHDAY_TIMEZONE` | Optional. Time zone used to decide "today" for birthday reminders (default `Asia/Colombo`). |
 | `CLIENT_URL` | Allowed frontend origin(s), comma-separated. Not needed locally, because localhost:5173 is always allowed. |
 | `FIREBASE_PROJECT_ID` | `project_id` from the service-account JSON |
