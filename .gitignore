@@ -3,3 +3,10 @@ node_modules
 *.env
 !.env.example
 dist
+
+# Backups and credentials must never be committed
+hrms-backups/
+backups/
+auth-users*.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json
