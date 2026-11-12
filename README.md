@@ -89,7 +89,8 @@ HR_Portal/
 
 ### 1. Firebase setup (once)
 
-1. In the [Firebase Console](https://console.firebase.google.com/), open the project (currently `hr-portal-604a1`).
+1. In the [Firebase Console](https://console.firebase.google.com/), open your Firebase project (for this development/testing setup: `hrms-65efa`).
+   The Firebase CLI default in `.firebaserc` is also `hrms-65efa`. Run `firebase use` to confirm the active project before any CLI command.
 2. **Build → Authentication → Get started**, then enable **Email/Password**.
 3. **Build → Firestore Database**: create a database.
 4. **Project settings → Service accounts → Generate new private key.** This downloads a JSON file with the backend credentials. Never commit it.
@@ -208,6 +209,10 @@ If you add a custom domain later, add it in the same places.
 - **Never commit `.env` files or the service-account JSON.** They are listed in `.gitignore`. Use `.env.example` for placeholders.
 - The service-account private key was pushed to GitHub in an earlier commit. Replace it: in **Firebase → Project settings → Service accounts**, generate a new key. Then go to **Google Cloud → IAM & Admin → Service accounts → firebase-adminsdk → Keys** and delete the old one.
 - Demo employees have known passwords from `mockEmployees.js`. Change them, or disable those accounts, before real use.
+
+### Backups (read-only)
+
+`server/scripts/backup-firestore.js` exports every Firestore collection to a folder **outside** the repository and never writes to Firebase. See the comments at the top of the file for usage. Backup folders contain sensitive HR data: never commit or share them.
 
 ## Known limitations / next steps
 

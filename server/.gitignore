@@ -24,3 +24,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Backups and credentials
+hrms-backups/
+backups/
+auth-users*.json
+serviceAccount*.json
+*-firebase-adminsdk-*.json
