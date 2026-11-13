@@ -1,6 +1,6 @@
+
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-//import Header from "./pages/Header/Header";
 import Home from "./Pages/Home";
 import Login from "./Pages/Login";
 import Dashboard from "./Pages/Dashboard";
@@ -16,11 +16,11 @@ import Performance from "./Pages/Performance";
 import Templates from "./Pages/Templates";
 import ExpenseTracker from "./Pages/ExpenseTracker";
 import Profile from "./Pages/Profile";
+
 import { ToastContainer } from "react-toastify";
 import ProtectedRoute from "./components/ProtectedRoute";
 
-const DIRECTORY_ROLES = ["HR", "Manager", "Team Lead", "Recruiter"];
-const TEAM_ROLES = ["HR", "Manager", "Team Lead", "Employee"];
+const HR_ROLES = ["HR"];
 
 function App() {
   return (
@@ -29,35 +29,33 @@ function App() {
         <ToastContainer position="top-center" autoClose={3000} />
 
         <Routes>
-          <Route path="/" element={<Home />}></Route>
-          <Route path="/login" element={<Login />}></Route>
-          <Route path="/forgot-password" element={<ForgotPassword />}></Route>
-          <Route path="/reset-password" element={<ResetPassword />}></Route>
+          {/* Public routes */}
+          <Route path="/" element={<Home />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Roles match the links each role sees in the sidebar. */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/dashboard" element={<Dashboard />}></Route>
-            <Route path="/profile" element={<Profile />}></Route>
-          </Route>
-          <Route element={<ProtectedRoute roles={DIRECTORY_ROLES} />}>
-            <Route path="/employees" element={<Employees />}></Route>
-            <Route path="/employees/:id" element={<EmployeeDetails />}></Route>
-          </Route>
-          <Route element={<ProtectedRoute roles={["HR"]} />}>
-            <Route path="/employees/:id/edit" element={<EmployeeEdit />}></Route>
-            <Route path="/templates" element={<Templates />}></Route>
-            <Route path="/expenses" element={<ExpenseTracker />}></Route>
-          </Route>
-          <Route element={<ProtectedRoute roles={TEAM_ROLES} />}>
-            <Route path="/attendance" element={<Attendance />}></Route>
-            <Route path="/leave" element={<Leave />}></Route>
-            <Route path="/performance" element={<Performance />}></Route>
-          </Route>
-          <Route element={<ProtectedRoute roles={["HR", "Finance"]} />}>
-            <Route path="/payslip" element={<Payslip />}></Route>
+          {/* HR-only routes */}
+          <Route element={<ProtectedRoute roles={HR_ROLES} />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/profile" element={<Profile />} />
+
+            <Route path="/employees" element={<Employees />} />
+            <Route path="/employees/:id" element={<EmployeeDetails />} />
+            <Route path="/employees/:id/edit" element={<EmployeeEdit />} />
+
+            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/leave" element={<Leave />} />
+
+            {/* Temporarily retained until final module review */}
+            <Route path="/performance" element={<Performance />} />
+
+            <Route path="/payslip" element={<Payslip />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/expenses" element={<ExpenseTracker />} />
           </Route>
 
-          <Route path="*" element={<Navigate to="/dashboard" replace />}></Route>
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </BrowserRouter>
     </>
