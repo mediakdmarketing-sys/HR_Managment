@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import {
   ChevronRight,
@@ -12,8 +13,6 @@ import {
   Wallet,
   CreditCard,
   IdCardLanyard,
-  UserRoundSearch,
-  UsersRound,
 } from "lucide-react";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -22,13 +21,26 @@ import { clearSession, getUser } from "../utils/auth";
 import { useMyPhoto } from "../utils/profilePhoto";
 import Avatar from "./Avatar";
 
+// HR-only navigation
+const HR_NAV_ITEMS = [
+  ["/employees", IdCardLanyard, "Employee Management"],
+  ["/attendance", Timer, "Attendance & Work Hours"],
+  ["/leave", FolderOutput, "Leave Management"],
+  ["/payslip", CreditCard, "Payroll & Payslips"],
+  ["/templates", FileSignature, "Letter Templates"],
+  ["/expenses", Wallet, "Expense Tracker"],
+];
+
 const Sidebar = () => {
   const user = getUser();
 
   const location = useLocation();
   const navigate = useNavigate();
+
   const [isOpen, setIsOpen] = useState(false);
-  const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
+  const [isLogoutDialogOpen, setIsLogoutDialogOpen] =
+    useState(false);
+
   const photo = useMyPhoto();
 
   const logout = async () => {
@@ -47,9 +59,12 @@ const Sidebar = () => {
   const cancelLogout = () => setIsLogoutDialogOpen(false);
 
   const closeSidebar = () => setIsOpen(false);
+
   const linkClassName = (path) =>
     `flex items-center gap-3 p-3 rounded-xl ${
-      location.pathname === path ? "bg-teal-50 text-teal-700" : ""
+      location.pathname === path
+        ? "bg-teal-50 text-teal-700"
+        : ""
     } hover:bg-teal-50`;
 
   return (
@@ -73,10 +88,15 @@ const Sidebar = () => {
       {/* Sidebar */}
       <div
         className={`
-          fixed inset-y-0 left-0 h-[100dvh] w-[min(16rem,calc(100vw-1rem))]
+          fixed inset-y-0 left-0 h-[100dvh]
+          w-[min(16rem,calc(100vw-1rem))]
           rounded-r-3xl p-2 bg-white shadow-lg z-50
           transform transition-transform duration-300
-          ${isOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"}
+          ${
+            isOpen
+              ? "translate-x-0"
+              : "-translate-x-full sm:translate-x-0"
+          }
           flex flex-col overflow-hidden
         `}
       >
@@ -84,18 +104,23 @@ const Sidebar = () => {
         <div className="flex shrink-0 items-center justify-between p-4 sm:p-6">
           <div className="flex items-center gap-3">
             <div className="grid h-12 w-12 place-content-center rounded-2xl bg-linear-to-br from-slate-800 to-teal-600 shadow-lg shadow-teal-600/20">
-              <SquareDashedKanban  className="text-white w-6 h-6" />
+              <SquareDashedKanban className="text-white w-6 h-6" />
             </div>
 
-            <h2 className="text-2xl font-bold text-slate-800">HRMS</h2>
+            <h2 className="text-2xl font-bold text-slate-800">
+              HRMS
+            </h2>
           </div>
-          <button onClick={closeSidebar} className="sm:hidden">
+
+          <button
+            onClick={closeSidebar}
+            className="sm:hidden"
+          >
             <X size={24} />
           </button>
         </div>
 
-        {/* Navigation */}
-
+        {/* HR Navigation */}
         <nav className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
           <Link
             to="/dashboard"
@@ -106,91 +131,50 @@ const Sidebar = () => {
             Dashboard
           </Link>
 
-          {[
-            ...(user?.role === "HR"
-              ? [
-                  ["/employees", IdCardLanyard, "Employee Management"],
-                  ["/attendance", Timer, "Attendance & Work Hours"],
-                  ["/leave", FolderOutput, "Leave Management"],
-                  ["/payslip", CreditCard, "Payroll & Payslips"],
-                  // ["/performance", ChartSpline, "Performance & Training"],
-                  ["/templates", FileSignature, "Letter Templates"],
-                  ["/expenses", Wallet, "Expense Tracker"],
-                ]
-              : []),
-            ...(user?.role === "Manager" || user?.role === "Team Lead"
-              ? [
-                  ["/employees", UsersRound, "Team Employees"],
-                  ["/attendance", Timer, "Attendance & Work Hours"],
-                  ["/leave", FolderOutput, "Leave Management"],
-                  // ["/performance", ChartSpline, "Performance & Training"],
-                ]
-              : []),
-            ...(user?.role === "Recruiter"
-              ? [[
-                  "/employees",
-                  UserRoundSearch,
-                  "Employee Management",
-                ]]
-              : []),
-            ...(user?.role === "Finance"
-              ? [[
-                  "/payslip",
-                  CreditCard,
-                  "Payroll & Payslips",
-                ]]
-              : []),
-            ...(user?.role === "Employee"
-              ? [
-                  ["/attendance", Timer, "My Attendance"],
-                  ["/leave", FolderOutput, "My Leave"],
-                  // ["/payslip", CreditCard, "My Payslips"],
-                  // ["/performance", ChartSpline, "My Performance"],
-                ]
-              : []),
-          ].map(([path, Icon, label]) => (
-            <Link
-              key={path}
-              to={path}
-              onClick={closeSidebar}
-              className={linkClassName(path)}
-            >
-              <Icon />
-              {label}
-            </Link>
-          ))}
-
-          {/* <Link
-            to="/profile"
-            onClick={closeSidebar}
-            className={linkClassName("/profile")}
-          >
-            <UserRoundCog />
-            Profile
-          </Link> */}
+          {user?.role === "HR" &&
+            HR_NAV_ITEMS.map(([path, Icon, label]) => (
+              <Link
+                key={path}
+                to={path}
+                onClick={closeSidebar}
+                className={linkClassName(path)}
+              >
+                <Icon />
+                {label}
+              </Link>
+            ))}
         </nav>
 
+        {/* Profile and Logout */}
         <div className="mx-4 mb-2 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <Link
             to="/profile"
             onClick={closeSidebar}
             title="My profile"
             className={`-m-1 flex items-center gap-3 rounded-lg p-1 transition hover:bg-slate-100 ${
-              location.pathname === "/profile" ? "bg-teal-50" : ""
+              location.pathname === "/profile"
+                ? "bg-teal-50"
+                : ""
             }`}
           >
             <Avatar name={user?.name} photo={photo} />
+
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-slate-700">
                 {user?.name || "User"}
               </p>
+
               {user?.role && (
                 <p className="truncate text-xs font-medium text-teal-700">
                   {user.role}
                 </p>
               )}
             </div>
-            <ChevronRight size={18} className="shrink-0 text-slate-400" />
+
+            <ChevronRight
+              size={18}
+              className="shrink-0 text-slate-400"
+            />
           </Link>
 
           <button
@@ -203,6 +187,7 @@ const Sidebar = () => {
         </div>
       </div>
 
+      {/* Logout Confirmation Dialog */}
       {isLogoutDialogOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4"
@@ -225,9 +210,11 @@ const Sidebar = () => {
             >
               Are you sure you want to log out?
             </h2>
+
             <p className="mt-2 text-sm leading-6 text-slate-500">
               You will need to sign in again to access your workspace.
             </p>
+
             <div className="mt-6 flex justify-end gap-3">
               <button
                 type="button"
@@ -236,6 +223,7 @@ const Sidebar = () => {
               >
                 Cancel
               </button>
+
               <button
                 type="button"
                 onClick={logout}

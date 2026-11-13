@@ -4,11 +4,9 @@ import {
   ArrowRight,
   BarChart3,
   CalendarDays,
-  CalendarPlus,
   CheckCircle2,
   Clock3,
   CreditCard,
-  FileBarChart,
   FileSignature,
   FileText,
   IdCardLanyard,
@@ -30,10 +28,9 @@ import {
 } from "recharts";
 import UserLayout from "../layouts/UserLayout";
 import { getUser } from "../utils/auth";
-import { getUserById, getUsers } from "../api/userApi";
+
+import { getUsers } from "../api/userApi";
 import { getLeaveRequests } from "../api/leaveApi";
-import Avatar from "../components/Avatar";
-import { useMyPhoto } from "../utils/profilePhoto";
 
 const NEW_JOINER_DAYS = 14;
 
@@ -469,198 +466,13 @@ const HrDashboard = ({ user }) => {
   );
 };
 
-const EmployeeDashboard = ({ user }) => {
-  const photo = useMyPhoto();
-  const [loadedAt] = useState(() => Date.now());
-  const currentEmployeeId = user?._id ?? user?.id;
-  const {
-    data: [employee, leaveData],
-    isLoading,
-    loadError,
-  } = useDashboardData(
-    () => [getUserById(currentEmployeeId), getLeaveRequests()],
-    [currentEmployeeId],
-  );
-  const leaveRequests = leaveData || [];
-
-  const today = toDateKey(new Date(loadedAt));
-  const yearStart = `${today.slice(0, 4)}-01-01`;
-  const myRequests = leaveRequests.filter((request) => request.employeeId === currentEmployeeId);
-  const approved = myRequests.filter((request) => request.status === "Approved");
-  const onLeaveToday = approved.find(
-    (request) => request.startDate <= today && request.endDate >= today,
-  );
-  const leaveTakenThisYear = approved
-    .filter((request) => request.startDate >= yearStart)
-    .reduce((total, request) => total + Number(request.days || 0), 0);
-  const myPending = myRequests.filter((request) => request.status === "Pending").length;
-  const upcomingLeave = approved
-    .filter((request) => request.startDate > today)
-    .sort((a, b) => a.startDate.localeCompare(b.startDate));
-  // Team Leads and Managers also receive other people's requests to review.
-  const isReviewer = ["Team Lead", "Manager"].includes(user?.role);
-  const toReview = leaveRequests.filter(
-    (request) => request.status === "Pending" && request.employeeId !== currentEmployeeId,
-  ).length;
-
-  return (
-    <>
-      {loadError && (
-        <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{loadError}</p>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Today"
-          value={onLeaveToday ? "On leave" : "Working"}
-          detail={onLeaveToday ? `${onLeaveToday.type} until ${formatDate(onLeaveToday.endDate)}` : "No approved leave today"}
-          icon={UserCheck}
-          color="bg-emerald-50 text-emerald-700"
-          isLoading={isLoading}
-        />
-        <StatCard
-          label="Leave taken"
-          value={`${leaveTakenThisYear} day${leaveTakenThisYear === 1 ? "" : "s"}`}
-          detail="Approved leave this year"
-          icon={CalendarDays}
-          color="bg-blue-50 text-blue-700"
-          to="/leave"
-          isLoading={isLoading}
-        />
-        <StatCard
-          label="My pending requests"
-          value={myPending}
-          detail="Waiting for a decision"
-          icon={FileText}
-          color="bg-amber-50 text-amber-700"
-          to="/leave"
-          isLoading={isLoading}
-        />
-        {isReviewer ? (
-          <StatCard
-            label="Requests to review"
-            value={toReview}
-            detail="Leave requests waiting for you"
-            icon={CheckCircle2}
-            color="bg-teal-50 text-teal-700"
-            to="/leave"
-            isLoading={isLoading}
-          />
-        ) : (
-          <StatCard
-            label="Next leave"
-            value={upcomingLeave[0] ? formatDate(upcomingLeave[0].startDate) : "—"}
-            detail={upcomingLeave[0] ? upcomingLeave[0].type : "No upcoming approved leave"}
-            icon={CalendarDays}
-            color="bg-teal-50 text-teal-700"
-            isLoading={isLoading}
-          />
-        )}
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-3">
-        <Panel title="My profile" description="Your details in the employee directory." icon={Users}>
-          <div className="mb-5 flex items-center gap-4 rounded-2xl bg-slate-50 p-4">
-            <Avatar name={user?.name} photo={photo} className="h-14 w-14 rounded-2xl text-xl" />
-            <div className="min-w-0">
-              <p className="truncate font-bold text-slate-800">{user?.name || "—"}</p>
-              <p className="truncate text-sm text-slate-500">{employee?.email || user?.email}</p>
-            </div>
-          </div>
-          <dl className="space-y-3">
-            {[
-              ["Employee ID", employee?.id],
-              ["Role", employee?.role],
-              ["Department", employee?.department],
-              ["Team lead", employee?.assignedTeamLead],
-              ["Status", employee?.status],
-            ].map(([label, value]) => (
-              <div key={label} className="flex items-center justify-between gap-4 text-sm">
-                <dt className="text-slate-500">{label}</dt>
-                <dd className="truncate font-semibold text-slate-700">
-                  {isLoading ? <Skeleton className="h-4 w-20" /> : value || "—"}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Panel>
-
-        <Panel
-          title="Recent leave requests"
-          description="Your latest requests and their status."
-          icon={FileText}
-          action={<PanelLink to="/leave">My leave</PanelLink>}
-          className="xl:col-span-2"
-        >
-          {isLoading ? (
-            <div className="space-y-3">
-              {[0, 1, 2].map((key) => <Skeleton key={key} className="h-12 w-full" />)}
-            </div>
-          ) : myRequests.length ? (
-            <div className="-mx-3 divide-y divide-slate-100">
-              {myRequests.slice(0, 5).map((request) => (
-                <LeaveRow key={request.id} request={request} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={CalendarDays}
-              title="No leave requests yet"
-              description="Requests you submit from My Leave will appear here."
-            />
-          )}
-        </Panel>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Panel title="Upcoming leave" description="Approved leave coming up." icon={CalendarDays}>
-          {upcomingLeave.length ? (
-            <div className="space-y-3">
-              {upcomingLeave.slice(0, 4).map((request) => (
-                <div
-                  key={request.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
-                >
-                  <span className="text-sm font-semibold text-slate-700">{request.type}</span>
-                  <span className="text-xs font-medium text-teal-700">
-                    {formatDate(request.startDate)} – {formatDate(request.endDate)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={CalendarDays}
-              title="No upcoming leave"
-              description="Approved leave that starts after today will appear here."
-            />
-          )}
-        </Panel>
-
-        <Panel title="Quick links" description="Access your employee tools." icon={Sparkles}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <QuickLink label="My leave" to="/leave" icon={CalendarDays} />
-            <QuickLink label="My attendance" to="/attendance" icon={Clock3} />
-            <QuickLink label="My payslips" to="/payslip" icon={CreditCard} />
-            <QuickLink label="My performance" to="/performance" icon={FileBarChart} />
-          </div>
-        </Panel>
-      </div>
-    </>
-  );
-};
-
 const Dashboard = () => {
   const user = getUser();
-  const userRole = user?.role || "Employee";
-  const isHr = userRole.toLowerCase() === "hr";
   const firstName = user?.name?.trim()?.split(" ")[0] || "there";
-  const actions = isHr
-    ? [
-        ["/employees", "Manage employees", Users],
-        ["/leave", "Review leave", CheckCircle2],
-      ]
-    : [["/leave", "Request leave", CalendarPlus]];
+  const actions = [
+    ["/employees", "Manage employees", Users],
+    ["/leave", "Review leave", CheckCircle2],
+  ];
 
   return (
     <UserLayout>
@@ -672,7 +484,7 @@ const Dashboard = () => {
             <div>
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="rounded-full bg-white/15 px-3 py-1 font-semibold text-teal-100">
-                  {userRole}
+                  HR
                 </span>
                 <span className="text-slate-300">{formatDate(new Date())}</span>
               </div>
@@ -680,9 +492,7 @@ const Dashboard = () => {
                 {greeting()}, {firstName}
               </h1>
               <p className="mt-2 max-w-xl text-slate-300">
-                {isHr
-                  ? "Here is your workforce overview for today."
-                  : "Here is your personal work overview for today."}
+                Here is your workforce overview for today.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -704,7 +514,7 @@ const Dashboard = () => {
           </div>
         </section>
 
-        {isHr ? <HrDashboard user={user} /> : <EmployeeDashboard user={user} />}
+        <HrDashboard user={user} />
       </div>
     </UserLayout>
   );
