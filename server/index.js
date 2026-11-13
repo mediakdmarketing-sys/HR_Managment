@@ -11,6 +11,7 @@ import templateRoute from "./routes/template.route.js";
 import expenseRoute from "./routes/expense.route.js";
 import payrollRoute from "./routes/payroll.route.js";
 import payslipShareRoute from "./routes/payslipShare.route.js";
+import attendanceRoute from "./routes/attendance.route.js";
 import aiRoute from "./routes/ai.route.js";
 import { initializeFirebaseData } from "./database/init.js";
 import { allowedOrigins } from "./config/origins.js";
@@ -40,6 +41,7 @@ app.use("/api/templates", templateRoute);
 app.use("/api/expenses", expenseRoute);
 app.use("/api/payroll", payrollRoute);
 app.use("/api/payslips", payslipShareRoute);
+app.use("/api/attendance", attendanceRoute);
 app.use("/api/ai", aiRoute);
 
 
