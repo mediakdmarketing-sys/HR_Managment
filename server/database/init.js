@@ -9,6 +9,14 @@ const authConfigurationError = () =>
   );
 
 export const initializeFirebaseData = async () => {
+  // Demo seeding is opt-in. It creates demo accounts with known passwords, so it only
+  // runs when SEED_DEMO_DATA=true is set explicitly (development/testing only).
+  if (process.env.SEED_DEMO_DATA !== "true") {
+    // Read-only connectivity check, so a bad Firebase configuration still fails fast at startup.
+    await firestore.collection("employees").limit(1).get();
+    console.log("Demo data seeding is disabled (set SEED_DEMO_DATA=true to enable).");
+    return;
+  }
   for (const employee of mockEmployees) {
     const reference = firestore.collection("employees").doc(employee.id);
     const existing = await reference.get();
