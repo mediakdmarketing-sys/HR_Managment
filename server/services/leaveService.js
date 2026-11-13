@@ -1,8 +1,17 @@
 import { firestore, storageBucket } from "../config/firebase.js";
+import {
+  DEFAULT_LEAVE_POLICIES,
+  customLeavePolicyId,
+  isDefaultLeavePolicyName,
+  mergeLeavePolicies,
+  normalizeLeavePolicyName,
+  validateLeavePolicyName,
+} from "../utils/leavePolicy.js";
 
 const leaves = firestore.collection("leaveRequests");
 const employees = firestore.collection("employees");
 const notifications = firestore.collection("notifications");
+const leavePolicies = firestore.collection("leavePolicies");
 
 const httpError = (statusCode, message) =>
   Object.assign(new Error(message), { statusCode });
@@ -10,6 +19,83 @@ const httpError = (statusCode, message) =>
 const employeeById = async (id) => {
   const snapshot = await employees.doc(id).get();
   return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
+};
+
+export const getLeavePolicies = async () => {
+  const snapshot = await leavePolicies.get();
+  const savedPolicies = snapshot.docs.map((document) => ({
+    ...document.data(),
+    id: document.id,
+  }));
+  return mergeLeavePolicies(savedPolicies);
+};
+
+export const createLeavePolicy = async ({ name, createdBy }) => {
+  const validated = validateLeavePolicyName(name);
+  if (validated.error) throw httpError(400, validated.error);
+
+  const { name: normalizedDisplayName, normalizedName } = validated.value;
+  const policyId = customLeavePolicyId(normalizedName);
+  const policyReference = leavePolicies.doc(policyId);
+  const defaultReferences = DEFAULT_LEAVE_POLICIES.map((policy) =>
+    leavePolicies.doc(policy.id),
+  );
+  const createdAt = new Date().toISOString();
+
+  try {
+    return await firestore.runTransaction(async (transaction) => {
+      const [existingPolicies, existingCustom, ...existingDefaults] =
+        await Promise.all([
+          transaction.get(leavePolicies),
+          transaction.get(policyReference),
+          ...defaultReferences.map((reference) => transaction.get(reference)),
+        ]);
+      const duplicate = existingPolicies.docs.some(
+        (document) =>
+          normalizeLeavePolicyName(document.data().name) === normalizedName,
+      );
+      if (
+        isDefaultLeavePolicyName(normalizedName) ||
+        duplicate ||
+        existingCustom.exists
+      ) {
+        throw httpError(409, "This leave type already exists.");
+      }
+
+      DEFAULT_LEAVE_POLICIES.forEach((policy, index) => {
+        if (!existingDefaults[index].exists) {
+          transaction.create(defaultReferences[index], {
+            ...policy,
+            isDefault: true,
+            createdAt,
+            createdBy,
+          });
+        }
+      });
+
+      const newPolicy = {
+        id: policyId,
+        name: normalizedDisplayName,
+        days: 0,
+        carryForward: 0,
+        isDefault: false,
+        createdAt,
+        createdBy,
+      };
+      transaction.create(policyReference, newPolicy);
+      return newPolicy;
+    });
+  } catch (error) {
+    if (error.statusCode) throw error;
+    if (
+      error.code === 6 ||
+      error.code === "6" ||
+      error.code === "already-exists"
+    ) {
+      throw httpError(409, "This leave type already exists.");
+    }
+    throw error;
+  }
 };
 
 const serialize = (snapshot, employee) => ({
