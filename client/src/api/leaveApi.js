@@ -9,6 +9,10 @@ export const getLeaveRequests = () => axios.get(`${API_BASE}/leaves`, authConfig
 export const createLeaveRequest = (data) => axios.post(`${API_BASE}/leaves`, data, authConfig());
 export const updateLeaveStatus = (id, status) =>
   axios.patch(`${API_BASE}/leaves/${id}/status`, { status }, authConfig());
+export const getLeavePolicies = () =>
+  axios.get(`${API_BASE}/leaves/policies`, authConfig());
+export const createLeavePolicy = (data) =>
+  axios.post(`${API_BASE}/leaves/policies`, data, authConfig());
 export const getLeaveAttachment = (id) =>
   axios.get(`${API_BASE}/leaves/${id}/attachment`, {
     ...authConfig(),

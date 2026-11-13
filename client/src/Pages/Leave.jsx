@@ -3,7 +3,12 @@ import { CalendarDays, Check, FileText, Plus, Settings2, Users, X } from "lucide
 import UserLayout from "../layouts/UserLayout";
 import { getUser } from "../utils/auth";
 import { toast } from "react-toastify";
-import { getLeaveRequests, updateLeaveStatus } from "../api/leaveApi";
+import {
+  createLeavePolicy,
+  getLeavePolicies,
+  getLeaveRequests,
+  updateLeaveStatus,
+} from "../api/leaveApi";
 
 const initialLeaveTypes = [
   { id: "annual", name: "Annual leave", days: 20, carryForward: 5 },
@@ -45,10 +50,15 @@ const StatCard = ({ label, value, detail, icon: Icon, color }) => (
 
 function Leave() {
   const user = getUser();
+  const isHr = user?.role?.toLowerCase() === "hr";
   const currentEmployeeId = user?._id ?? user?.id;
   const [leaveTypes, setLeaveTypes] = useState(initialLeaveTypes);
   const [requests, setRequests] = useState([]);
   const [loadError, setLoadError] = useState("");
+  const [isPolicyLoading, setIsPolicyLoading] = useState(isHr);
+  const [isPolicySaving, setIsPolicySaving] = useState(false);
+  const [policyError, setPolicyError] = useState("");
+  const [policySuccess, setPolicySuccess] = useState("");
   const [isTypeOpen, setIsTypeOpen] = useState(false);
   const [newType, setNewType] = useState("");
   const [activeTab, setActiveTab] = useState("requests");
@@ -74,6 +84,35 @@ function Leave() {
       window.removeEventListener("leave-notification", loadRequests);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isHr) return undefined;
+    let active = true;
+    getLeavePolicies()
+      .then((response) => {
+        const policies = response.data?.data;
+        if (!Array.isArray(policies)) {
+          throw new Error("The server returned an invalid leave policies response.");
+        }
+        if (!active) return;
+        setLeaveTypes(policies);
+        setPolicyError("");
+        setPolicySuccess("Leave policies loaded from Firebase.");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setPolicyError(
+          error.response?.data?.message || "Unable to load leave policies.",
+        );
+      })
+      .finally(() => {
+        if (active) setIsPolicyLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isHr]);
 
   // Preserve existing backend visibility rules; never assume the API returns every employee.
   const reviewRequests = requests.filter((request) => request.employeeId !== currentEmployeeId);
@@ -107,21 +146,42 @@ function Leave() {
     }
   };
 
-  // Existing policy editor is frontend-only. Backend persistence remains a separate task.
-  const addLeaveType = (event) => {
+  const addLeaveType = async (event) => {
     event.preventDefault();
-    if (!newType.trim()) return;
-    const name = newType.trim();
-    if (leaveTypes.some((type) => type.name.toLowerCase() === name.toLowerCase())) {
+    const name = newType.trim().replace(/\s+/g, " ");
+    if (!name || isPolicySaving) return;
+    const normalizedName = name.toLowerCase();
+    if (
+      leaveTypes.some(
+        (type) => type.name.trim().replace(/\s+/g, " ").toLowerCase() === normalizedName,
+      )
+    ) {
       toast.error("This leave type already exists.", { theme: "dark" });
       return;
     }
-    setLeaveTypes((current) => [...current, {
-      id: name.toLowerCase().replace(/\s+/g, "-"), name, days: 0, carryForward: 0,
-    }]);
-    setNewType("");
-    setIsTypeOpen(false);
-    toast.info("Added for this session only; saving policies to Firebase is pending.", { theme: "dark" });
+
+    setIsPolicySaving(true);
+    setPolicyError("");
+    setPolicySuccess("");
+    try {
+      const response = await createLeavePolicy({ name });
+      const policy = response.data?.data;
+      if (!policy?.id || !policy.name) {
+        throw new Error("The server returned an invalid saved policy.");
+      }
+      setLeaveTypes((current) => [...current, policy]);
+      setNewType("");
+      setIsTypeOpen(false);
+      setPolicySuccess("Leave type saved to Firebase.");
+      toast.success("Leave type saved to Firebase.", { theme: "dark" });
+    } catch (error) {
+      const message =
+        error.response?.data?.message || error.message || "Unable to save leave type.";
+      setPolicyError(message);
+      toast.error(message, { theme: "dark" });
+    } finally {
+      setIsPolicySaving(false);
+    }
   };
 
   return (
@@ -137,10 +197,10 @@ function Leave() {
           <StatCard label="Pending requests" value={pendingRequests.length} detail="Waiting for review" icon={FileText} color="bg-amber-50 text-amber-700" />
           <StatCard label="Approved this month" value={approvedThisMonth} detail="Requests approved this month" icon={Check} color="bg-emerald-50 text-emerald-700" />
           <StatCard label="Employees on leave" value={employeesOnLeave} detail="Approved leave active today" icon={Users} color="bg-blue-50 text-blue-700" />
-          <StatCard label="Leave types" value={leaveTypes.length} detail="Local policy settings (not yet saved)" icon={Settings2} color="bg-teal-50 text-teal-700" />
+          <StatCard label="Leave types" value={leaveTypes.length} detail={isPolicyLoading ? "Loading saved policies" : policyError ? "Unable to load saved policies" : "Policy settings in Firebase"} icon={Settings2} color="bg-teal-50 text-teal-700" />
         </div>
         <div className="flex gap-2 border-b border-slate-200">
-          {[["requests", "Requests"], ["calendar", "Team calendar"], ["policies", "Leave policies"]].map(([value, label]) => (
+          {[["requests", "Requests"], ["calendar", "Team calendar"], ...(isHr ? [["policies", "Leave policies"]] : [])].map(([value, label]) => (
             <button key={value} type="button" onClick={() => setActiveTab(value)}
               className={`border-b-2 px-4 py-3 text-sm font-semibold ${activeTab === value ? "border-teal-700 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
               {label}
@@ -292,7 +352,7 @@ function Leave() {
               </section>
             )}
 
-            {activeTab === "policies" && (
+            {activeTab === "policies" && isHr && (
               <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
                 <div className="mb-5 flex items-center justify-between">
                   <div>
@@ -305,12 +365,32 @@ function Leave() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setIsTypeOpen(true)}
-                    className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800"
+                    disabled={isPolicyLoading || isPolicySaving}
+                    onClick={() => {
+                      setPolicyError("");
+                      setPolicySuccess("");
+                      setIsTypeOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Plus size={17} /> Add type
                   </button>
                 </div>
+                {isPolicyLoading && (
+                  <p className="mb-4 rounded-xl bg-blue-50 p-4 text-sm text-blue-700" role="status">
+                    Loading saved leave policies...
+                  </p>
+                )}
+                {policyError && (
+                  <p className="mb-4 rounded-xl bg-red-50 p-4 text-sm text-red-700" role="alert">
+                    {policyError}
+                  </p>
+                )}
+                {policySuccess && (
+                  <p className="mb-4 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700" role="status">
+                    {policySuccess}
+                  </p>
+                )}
                 <div className="grid gap-4 md:grid-cols-2">
                   {leaveTypes.map((type) => (
                     <div
@@ -333,7 +413,7 @@ function Leave() {
             )}
 
       </div>
-      {isTypeOpen && (
+      {isTypeOpen && isHr && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4">
           <form
             onSubmit={addLeaveType}
@@ -345,8 +425,9 @@ function Leave() {
               </h2>
               <button
                 type="button"
+                disabled={isPolicySaving}
                 onClick={() => setIsTypeOpen(false)}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"
+                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-50"
               >
                 <X size={20} />
               </button>
@@ -363,9 +444,10 @@ function Leave() {
             </label>
             <button
               type="submit"
-              className="mt-5 w-full rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800"
+              disabled={isPolicySaving}
+              className="mt-5 w-full rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
             >
-              Add leave type
+              {isPolicySaving ? "Saving..." : "Add leave type"}
             </button>
           </form>
         </div>

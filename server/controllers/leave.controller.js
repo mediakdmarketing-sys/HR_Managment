@@ -1,5 +1,36 @@
 import * as leaveService from "../services/leaveService.js";
 
+export const listLeavePolicies = async (req, res) => {
+  try {
+    const policies = await leaveService.getLeavePolicies();
+    return res.json({ success: true, data: policies });
+  } catch (error) {
+    console.error("Could not load leave policies.", error);
+    return res.status(500).json({
+      success: false,
+      message: "Could not load leave policies.",
+    });
+  }
+};
+
+export const addLeavePolicy = async (req, res) => {
+  try {
+    const policy = await leaveService.createLeavePolicy({
+      name: req.body?.name,
+      createdBy: req.user.id,
+    });
+    return res.status(201).json({ success: true, data: policy });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not save leave policy.", error);
+    return res.status(statusCode).json({
+      success: false,
+      message:
+        statusCode === 500 ? "Could not save leave policy." : error.message,
+    });
+  }
+};
+
 export const listLeaves = async (req, res) => {
   try {
     const requests = await leaveService.getLeaveRequests(req.user);
