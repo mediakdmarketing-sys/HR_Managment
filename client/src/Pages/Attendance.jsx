@@ -8,27 +8,21 @@ import {
   LogIn,
   LogOut,
   Timer,
-  X,
 } from "lucide-react";
 import UserLayout from "../layouts/UserLayout";
 import mockEmployees from "../assets/mockEmployees";
 import { getUser } from "../utils/auth";
+import {
+  getAttendanceRecords,
+  importAttendanceRecords,
+} from "../api/attendanceApi";
+import { parseAttendanceCsv } from "../utils/attendanceCsv";
 
 const PAGE_SIZE = 10;
 const REQUIRED_WORK_SECONDS = 8 * 60 * 60;
 const SAMPLE_WORK_SECONDS = 4 * 60 * 60 + 34 * 60 + 12;
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
-
-const mockAttendance = mockEmployees.map((employee) => ({
-  id: employee.id,
-  name: employee.name,
-  email: employee.email,
-  department: employee.department,
-  attendanceStatus: employee.status === "Active" ? "Present" : "Absent",
-  workingHours: employee.workingHours,
-  totalBreakTime: employee.totalBreakHours,
-}));
 
 const breakRows = [
   { type: "Break", start: "10:15 AM", end: "10:30 AM", duration: "15m", status: "Completed" },
@@ -216,96 +210,48 @@ function EmployeeAttendance() {
   );
 }
 
-const normaliseHeader = (header) =>
-  header.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-const parseCsvRow = (row) => {
-  const values = [];
-  let value = "";
-  let insideQuotes = false;
-
-  for (let index = 0; index < row.length; index += 1) {
-    const character = row[index];
-    const nextCharacter = row[index + 1];
-
-    if (character === '"' && insideQuotes && nextCharacter === '"') {
-      value += '"';
-      index += 1;
-    } else if (character === '"') {
-      insideQuotes = !insideQuotes;
-    } else if (character === "," && !insideQuotes) {
-      values.push(value.trim());
-      value = "";
-    } else {
-      value += character;
-    }
-  }
-
-  values.push(value.trim());
-  return values;
-};
-
-const getCsvValue = (row, headerMap, names) => {
-  const header = names.find((name) => headerMap.has(normaliseHeader(name)));
-  return header ? row[headerMap.get(normaliseHeader(header))] || "" : "";
-};
-
-const parseAttendanceCsv = (content) => {
-  const rows = content
-    .replace(/^\uFEFF/, "")
-    .split(/\r?\n/)
-    .filter((row) => row.trim());
-
-  if (rows.length < 2) {
-    throw new Error("The CSV file must include a header and at least one record.");
-  }
-
-  const headers = parseCsvRow(rows[0]);
-  const headerMap = new Map(
-    headers.map((header, index) => [normaliseHeader(header), index])
-  );
-  const nameHeader = ["name", "employeeName"];
-  const emailHeader = ["email", "emailId"];
-  const departmentHeader = ["department", "dept"];
-  const statusHeader = ["status", "attendanceStatus", "attendance"];
-  const workingHoursHeader = ["workingHours", "hoursWorked", "hours"];
-  const breakHeader = ["totalBreakTime", "totalBreakHours", "breakTime"];
-
-  if (
-    !nameHeader.some((name) => headerMap.has(normaliseHeader(name))) ||
-    !emailHeader.some((name) => headerMap.has(normaliseHeader(name)))
-  ) {
-    throw new Error("CSV must contain name and email columns.");
-  }
-
-  return rows.slice(1).map((row, index) => {
-    const values = parseCsvRow(row);
-    const rawStatus = getCsvValue(values, headerMap, statusHeader).toLowerCase();
-    const attendanceStatus = rawStatus.includes("absent")
-      ? "Absent"
-      : "Present";
-
-    return {
-      id: `CSV-${index + 1}`,
-      name: getCsvValue(values, headerMap, nameHeader),
-      email: getCsvValue(values, headerMap, emailHeader),
-      department:
-        getCsvValue(values, headerMap, departmentHeader) || "Unassigned",
-      attendanceStatus,
-      workingHours: getCsvValue(values, headerMap, workingHoursHeader) || "0",
-      totalBreakTime: getCsvValue(values, headerMap, breakHeader) || "0",
-    };
-  }).filter((employee) => employee.name && employee.email);
-};
-
 function HrAttendance() {
   const fileInputRef = useRef(null);
-  const [attendance, setAttendance] = useState(mockAttendance);
-  const [dataSource, setDataSource] = useState("Mock data");
+  const [attendance, setAttendance] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isImporting, setIsImporting] = useState(false);
   const [departmentFilter, setDepartmentFilter] = useState("All departments");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [currentPage, setCurrentPage] = useState(1);
   const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [importSummary, setImportSummary] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const loadAttendance = async () => {
+      try {
+        const response = await getAttendanceRecords();
+        const records = response.data?.data;
+        if (!Array.isArray(records)) {
+          throw new Error("The server returned an invalid attendance response.");
+        }
+        if (!active) return;
+        setAttendance(records);
+        setLoadError("");
+      } catch (loadError) {
+        if (!active) return;
+        const message =
+          loadError.response?.data?.message ||
+          loadError.message ||
+          "Saved attendance could not be loaded.";
+        setLoadError(message);
+        setError(message);
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+
+    loadAttendance();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filteredAttendance = useMemo(
     () =>
@@ -352,42 +298,80 @@ function HrAttendance() {
     setCurrentPage(1);
   };
 
-  const importCsv = (event) => {
+  const importCsv = async (event) => {
     const [file] = event.target.files;
     if (!file) return;
 
     setError("");
-    const reader = new FileReader();
-    reader.onload = () => {
+    setImportSummary("");
+    setIsImporting(true);
+    event.target.value = "";
+
+    let importedRecords;
+    try {
+      importedRecords = parseAttendanceCsv(await file.text());
+    } catch (parseError) {
+      setError(parseError.message || "The CSV file could not be read.");
+      setIsImporting(false);
+      return;
+    }
+
+    const totals = { imported: 0, duplicates: 0, skipped: 0, failed: 0 };
+    const issues = [];
+    for (let start = 0; start < importedRecords.length; start += 500) {
+      const batch = importedRecords.slice(start, start + 500);
       try {
-        const importedAttendance = parseAttendanceCsv(String(reader.result));
-        if (importedAttendance.length === 0) {
-          throw new Error("The CSV file does not contain valid attendance records.");
+        const response = await importAttendanceRecords(batch);
+        const result = response.data?.data;
+        for (const key of Object.keys(totals)) {
+          totals[key] += Number(result?.[key]) || 0;
         }
-
-        setAttendance(importedAttendance);
-        setDataSource(file.name);
-        setCurrentPage(1);
-        clearFilters();
-      } catch (parseError) {
-        setError(parseError.message);
-      } finally {
-        event.target.value = "";
+        for (const row of result?.results || []) {
+          if (row.status === "skipped" || row.status === "failed") {
+            issues.push(`Row ${row.rowNumber}: ${row.reason}`);
+          }
+        }
+      } catch (importError) {
+        totals.failed += batch.length;
+        const message =
+          importError.response?.data?.message ||
+          importError.message ||
+          "The batch could not be submitted.";
+        issues.push(`Rows ${batch[0].rowNumber}-${batch[batch.length - 1].rowNumber}: ${message}`);
       }
-    };
-    reader.onerror = () => {
-      setError("The CSV file could not be read.");
-      event.target.value = "";
-    };
-    reader.readAsText(file);
-  };
+    }
 
-  const restoreMockData = () => {
-    setAttendance(mockAttendance);
-    setDataSource("Mock data");
+    try {
+      const response = await getAttendanceRecords();
+      const records = response.data?.data;
+      if (!Array.isArray(records)) {
+        throw new Error("The server returned an invalid attendance response.");
+      }
+      setAttendance(records);
+      setLoadError("");
+    } catch (loadError) {
+      setLoadError(
+        loadError.response?.data?.message ||
+          loadError.message ||
+          "Saved attendance could not be reloaded.",
+      );
+      issues.push(
+        `Saved records could not be reloaded: ${
+          loadError.response?.data?.message || loadError.message
+        }`,
+      );
+    }
+
+    setImportSummary(
+      `${totals.imported} imported, ${totals.duplicates} duplicates, ${totals.skipped} skipped, ${totals.failed} failed.`,
+    );
+    if (issues.length > 0) {
+      const remaining = issues.length > 5 ? ` (and ${issues.length - 5} more)` : "";
+      setError(`${issues.slice(0, 5).join(" · ")}${remaining}`);
+    }
     setCurrentPage(1);
     clearFilters();
-    setError("");
+    setIsImporting(false);
   };
 
   return (
@@ -442,31 +426,29 @@ function HrAttendance() {
               type="file"
               accept=".csv,text/csv"
               onChange={importCsv}
+              disabled={isImporting || isLoading}
               className="hidden"
             />
             <button
               type="button"
+              disabled={isImporting || isLoading}
               onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800"
+              className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
             >
               <FileUp size={18} />
-              Import CSV
+              {isImporting ? "Importing..." : "Import CSV"}
             </button>
 
-            {dataSource !== "Mock data" && (
-              <button
-                type="button"
-                onClick={restoreMockData}
-                className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
-              >
-                <X size={17} />
-                Use mock data
-              </button>
-            )}
           </div>
           <p className="mt-3 text-xs text-slate-400">
-            Showing: <span className="font-semibold">{dataSource}</span>
+            Showing: <span className="font-semibold">Firestore</span>
+            {isLoading && <span> · Loading saved records...</span>}
           </p>
+          {importSummary && (
+            <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
+              Import results: {importSummary}
+            </p>
+          )}
           {error && (
             <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
               {error}
@@ -476,12 +458,14 @@ function HrAttendance() {
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[800px] text-left">
+            <table className="w-full min-w-[1000px] text-left">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 text-center">
                 <tr>
+                  <th className="px-6 py-4 font-semibold">Employee ID</th>
                   <th className="px-6 py-4 font-semibold">Name</th>
                   <th className="px-6 py-4 font-semibold">Email</th>
                   <th className="px-6 py-4 font-semibold">Department</th>
+                  <th className="px-6 py-4 font-semibold">Date</th>
                   <th className="px-6 py-4 font-semibold">Attendance</th>
                   <th className="px-6 py-4 font-semibold">Working hours</th>
                   <th className="px-6 py-4 font-semibold">Total break time</th>
@@ -491,14 +475,20 @@ function HrAttendance() {
                 {visibleAttendance.length > 0 ? (
                   visibleAttendance.map((employee) => (
                     <tr key={employee.id} className="transition hover:bg-slate-50">
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {employee.employeeId || employee.id}
+                      </td>
                       <td className="px-6 py-4 font-semibold text-slate-800 text-start">
-                        {employee.name}
+                        {employee.name || employee.employeeName}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-500 text-start">
-                        {employee.email}
+                        {employee.email || employee.employeeEmail}
                       </td>
                       <td className="px-6 py-4 text-sm text-slate-600">
                         {employee.department}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">
+                        {employee.date || "—"}
                       </td>
                       <td className="px-6 py-4">
                         <span
@@ -522,10 +512,16 @@ function HrAttendance() {
                 ) : (
                   <tr>
                     <td
-                      colSpan="6"
+                      colSpan="8"
                       className="px-6 py-12 text-center text-sm text-slate-500"
                     >
-                      No attendance records match your filters.
+                      {isLoading
+                        ? "Loading attendance records..."
+                        : loadError
+                          ? "Attendance records could not be loaded."
+                          : attendance.length === 0
+                            ? "No attendance records have been imported yet."
+                            : "No attendance records match your filters."}
                     </td>
                   </tr>
                 )}
