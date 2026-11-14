@@ -22,6 +22,10 @@ import {
   importLeaveCsv,
   updateLeaveStatus,
 } from "../api/leaveApi";
+import {
+  findAllLeaveRequestConflicts,
+  findLeaveRequestConflicts,
+} from "../utils/leaveConflicts";
 
 const initialLeaveTypes = [
   { id: "annual", name: "Annual leave", days: 20, carryForward: 5 },
@@ -33,12 +37,22 @@ const initialLeaveTypes = [
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
 
-const formatDate = (date) =>
-  new Intl.DateTimeFormat("en", {
+const formatDate = (date) => {
+  if (
+    typeof date !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    Number.isNaN(Date.parse(`${date}T00:00:00Z`)) ||
+    new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date
+  ) {
+    return "Invalid date";
+  }
+  return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(date));
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));
+};
 
 const calculateCalendarDays = (startDate, endDate) => {
   if (!startDate || !endDate) return null;
@@ -205,6 +219,16 @@ function Leave() {
   const employeesOnLeave = new Set(reviewRequests.filter((request) =>
     request.status === "Approved" && request.startDate <= today && request.endDate >= today
   ).map((request) => request.employeeId)).size;
+  const activeCalendarRequests = requests.filter(
+    (request) => request.status === "Pending" || request.status === "Approved",
+  );
+  const calendarConflicts = findAllLeaveRequestConflicts(activeCalendarRequests);
+  const approvalRequest = approvalPreview
+    ? requests.find((request) => request.id === approvalPreview.requestId)
+    : null;
+  const approvalConflicts = approvalRequest
+    ? findLeaveRequestConflicts(approvalRequest, requests)
+    : [];
 
   const updateRequestStatus = async (id, status, expectedAllocation) => {
     if (decidingRef.current) return false;
@@ -604,10 +628,22 @@ function Leave() {
                   </div>
                   <CalendarDays className="text-teal-600" size={22} />
                 </div>
+                {calendarConflicts.length === 0 ? (
+                  <p className="mb-4 rounded-xl bg-emerald-50 p-4 text-sm font-medium text-emerald-800" role="status">
+                    No scheduling conflicts detected.
+                  </p>
+                ) : (
+                  <p className="mb-4 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-800" role="status">
+                    {calendarConflicts.length} overlapping leave pair(s) need review. Conflicts do not change request decisions.
+                  </p>
+                )}
                 <div className="space-y-3">
-                  {requests
-                    .filter((request) => request.status !== "Rejected")
-                    .map((request) => (
+                  {activeCalendarRequests.map((request) => {
+                    const requestConflicts = findLeaveRequestConflicts(
+                      request,
+                      activeCalendarRequests,
+                    );
+                    return (
                       <div
                         key={request.id}
                         className="flex flex-col gap-2 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between"
@@ -619,18 +655,39 @@ function Leave() {
                           <p className="text-sm text-slate-500">
                             {request.type} · {request.days} day(s)
                           </p>
+                          <span
+                            className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass[request.status] || "bg-slate-100 text-slate-600"}`}
+                          >
+                            {request.status}
+                          </span>
+                          {requestConflicts.length > 0 && (
+                            <ul className="mt-2 space-y-1 text-xs text-amber-800">
+                              {requestConflicts.map((conflict) => (
+                                <li key={`${request.id}-${conflict.requestId}`}>
+                                  Conflict with {conflict.employeeName} ({conflict.status}) ·{" "}
+                                  {formatDate(conflict.overlapStart)} – {formatDate(conflict.overlapEnd)}
+                                  <span className="sr-only">
+                                    ; {request.employeeName}, {request.status}
+                                  </span>
+                                  <span aria-hidden="true"> · {request.status}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
                         <span className="text-sm font-medium text-teal-700">
                           {formatDate(request.startDate)} -{" "}
                           {formatDate(request.endDate)}
                         </span>
                       </div>
-                    ))}
+                    );
+                  })}
+                  {activeCalendarRequests.length === 0 && (
+                    <p className="rounded-xl border border-slate-200 p-4 text-sm text-slate-500">
+                      No pending or approved leave requests to display.
+                    </p>
+                  )}
                 </div>
-                <p className="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
-                  Conflict warning: review overlapping requests before approving
-                  multiple team members for the same dates.
-                </p>
               </section>
             )}
 
@@ -1162,6 +1219,39 @@ function Leave() {
                 If approved, {approvalPreview.unpaidDays} day(s) will be unpaid.
               </p>
             )}
+            <section className="mt-5 rounded-xl border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Scheduling conflicts
+              </h3>
+              {approvalConflicts.length === 0 ? (
+                <p className="mt-2 text-sm text-emerald-700">
+                  No scheduling conflicts detected.
+                </p>
+              ) : (
+                <ul className="mt-2 space-y-2">
+                  {approvalConflicts.map((conflict) => (
+                    <li
+                      key={`${approvalPreview.requestId}-${conflict.requestId}`}
+                      className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                    >
+                      <span className="font-semibold">
+                        {approvalPreview.employeeName} ({approvalRequest?.status || "Pending"}) ↔{" "}
+                        {conflict.employeeName} ({conflict.status})
+                      </span>
+                      <span className="mt-1 block text-xs">
+                        Overlapping dates: {formatDate(conflict.overlapStart)} –{" "}
+                        {formatDate(conflict.overlapEnd)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {approvalConflicts.length > 0 && (
+                <p className="mt-3 text-xs text-slate-600">
+                  Conflicts are informational; approval or rejection remains an HR decision.
+                </p>
+              )}
+            </section>
             <div className="mt-5">
               <h3 className="text-sm font-semibold text-slate-700">
                 Remaining paid balance by leave type
