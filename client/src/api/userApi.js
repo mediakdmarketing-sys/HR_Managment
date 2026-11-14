@@ -20,6 +20,9 @@ export const createUser = (userData) => {
   return axios.post(API, userData);
 };
 
+export const importEmployeesCsv = (content) =>
+  axios.post(`${API}/import`, { content });
+
 export const getUserById = (id) => axios.get(`${API}/${id}`);
 
 export const getEmployeeOptions = () => axios.get(`${API}/options`);

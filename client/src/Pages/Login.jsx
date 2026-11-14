@@ -180,14 +180,10 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="flex justify-between mt-5 text-sm text-slate-500">
+          <div className="mt-5 text-sm text-slate-500">
             <Link to="/forgot-password" className="text-teal-700 hover:text-teal-800">
               Forgot Password?
             </Link>
-
-            <a href="/register" className="text-slate-600 hover:text-slate-900">
-              Register
-            </a>
           </div>
         </div>
       </div>

@@ -11,33 +11,25 @@ import {
   saveProfilePhoto,
   getUserById,
   getUsers,
+  importEmployeesCsv,
   updateUser,
 } from "../controllers/user.controller.js";
 
-const directoryRoles = ["HR", "Manager", "Team Lead", "Recruiter"];
-
-// Everyone may read their own record; directory roles may read anyone's.
-const selfOrDirectory = (req, res, next) => {
-  if (req.params.id === req.user.id || directoryRoles.includes(req.user.role)) {
-    return next();
-  }
-  return res.status(403).json({ success: false, message: "Access denied" });
-};
-
 const router = express.Router();
-router.use(authMiddleware);
+router.use(authMiddleware, authorize("HR"));
 
-router.get("/all", authorize(...directoryRoles), getUsers);
-router.get("/options", authorize(...directoryRoles), getEmployeeOptions);
+router.get("/all", getUsers);
+router.get("/options", getEmployeeOptions);
 
 router.put("/me/photo", saveProfilePhoto);
 router.delete("/me/photo", removeProfilePhoto);
 
-router.post("/", authorize("HR"), createUser);
-router.get("/:id", selfOrDirectory, getUserById);
+router.post("/", createUser);
+router.post("/import", importEmployeesCsv);
+router.get("/:id", getUserById);
 router.get("/:id/account-number", getAccountNumber);
-router.get("/:id/photo", selfOrDirectory, getProfilePhoto);
-router.patch("/:id", authorize("HR"), updateUser);
-router.patch("/:id/disable", authorize("HR"), disableUser);
+router.get("/:id/photo", getProfilePhoto);
+router.patch("/:id", updateUser);
+router.patch("/:id/disable", disableUser);
 
 export default router;

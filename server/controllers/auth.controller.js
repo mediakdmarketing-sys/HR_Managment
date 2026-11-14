@@ -1,5 +1,6 @@
 import { success, error } from "../utils/apiResponse.js";
 import { firebaseAuth, firestore } from "../config/firebase.js";
+import { isActiveHrRecord } from "../utils/employeeDirectory.js";
 
 // export const register = async (req, res) => {
 //   try {
@@ -27,7 +28,7 @@ export const login = async (req, res) => {
       .where("uid", "==", decoded.uid)
       .limit(1)
       .get();
-    if (snapshot.empty || snapshot.docs[0].data().status !== "Active") {
+    if (snapshot.empty || !isActiveHrRecord(snapshot.docs[0].data())) {
       return error(res, "User not found or inactive", 401);
     }
     const user = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };

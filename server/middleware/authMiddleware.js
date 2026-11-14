@@ -1,4 +1,5 @@
 import { firebaseAuth, firestore } from "../config/firebase.js";
+import { isActiveHrRecord } from "../utils/employeeDirectory.js";
 
 const authenticate = async (req, res, next) => {
   const header = req.headers.authorization;
@@ -13,10 +14,11 @@ const authenticate = async (req, res, next) => {
       .where("uid", "==", decoded.uid)
       .limit(1)
       .get();
-    if (snapshot.empty || snapshot.docs[0].data().status !== "Active") {
-      return res.status(401).json({ success: false, message: "Inactive or unknown user" });
+    if (snapshot.empty || !isActiveHrRecord(snapshot.docs[0].data())) {
+      return res.status(403).json({ success: false, message: "Active HR access is required" });
     }
-    req.user = { id: snapshot.docs[0].id, ...snapshot.docs[0].data(), ...decoded };
+    req.user = { ...decoded, ...snapshot.docs[0].data(), id: snapshot.docs[0].id };
+    req.user.auth_time = decoded.auth_time;
     next();
   } catch {
     return res.status(401).json({ success: false, message: "Invalid Firebase token" });

@@ -1,64 +1,6 @@
-import { firebaseAuth, firestore } from "../config/firebase.js";
-import mockEmployees from "../mockEmployees.js";
-
-const authConfigurationError = () =>
-  new Error(
-    "Firebase Authentication is not enabled for this project. " +
-      "Open Firebase Console > Build > Authentication > Get started, " +
-      "then enable the Email/Password sign-in provider.",
-  );
+import { firestore } from "../config/firebase.js";
 
 export const initializeFirebaseData = async () => {
-  // Demo seeding is opt-in. It creates demo accounts with known passwords, so it only
-  // runs when SEED_DEMO_DATA=true is set explicitly (development/testing only).
-  if (process.env.SEED_DEMO_DATA !== "true") {
-    // Read-only connectivity check, so a bad Firebase configuration still fails fast at startup.
-    await firestore.collection("employees").limit(1).get();
-    console.log("Demo data seeding is disabled (set SEED_DEMO_DATA=true to enable).");
-    return;
-  }
-  for (const employee of mockEmployees) {
-    const reference = firestore.collection("employees").doc(employee.id);
-    const existing = await reference.get();
-    if (existing.exists) continue;
-
-    let authUser;
-    try {
-      authUser = await firebaseAuth.getUserByEmail(employee.email);
-    } catch (error) {
-      if (error.code === "auth/configuration-not-found") {
-        throw authConfigurationError();
-      }
-      if (error.code !== "auth/user-not-found") throw error;
-      try {
-        authUser = await firebaseAuth.createUser({
-          email: employee.email,
-          password: employee.plain_paaword,
-          displayName: employee.name,
-          disabled: employee.status !== "Active",
-        });
-      } catch (createError) {
-        if (createError.code === "auth/configuration-not-found") {
-          throw authConfigurationError();
-        }
-        throw createError;
-      }
-    }
-
-    await reference.set({
-      uid: authUser.uid,
-      name: employee.name,
-      email: employee.email.toLowerCase(),
-      department: employee.department,
-      status: employee.status,
-      role: employee.role,
-      personlEmail: employee.personalEmail ?? null,
-      assignedTeamLead: employee.assignedTeamLead,
-      workingHours: employee.workingHours,
-      totalBreakHours: employee.totalBreakHours,
-      monthlyTotalWorkingHours: employee.monthlyTotalWorkingHours,
-      createdAt: new Date().toISOString(),
-    });
-  }
-  console.log("Firebase data initialized.");
+  await firestore.collection("employees").limit(1).get();
+  console.log("Firebase connectivity verified; no employee or authentication records were seeded.");
 };

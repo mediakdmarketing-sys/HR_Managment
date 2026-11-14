@@ -6,6 +6,7 @@ import UserLayout from "../layouts/UserLayout";
 import { getAccountNumber, getUserById } from "../api/userApi";
 import PasswordConfirmDialog from "../components/PasswordConfirmDialog";
 import { getUser } from "../utils/auth";
+import { isEmployeeBankDetailsComplete } from "../utils/bank";
 
 const fields = [
   ["name", "Name"],
@@ -121,13 +122,40 @@ export default function EmployeeDetails() {
                     <h2 className="text-lg font-bold text-slate-800">Bank details</h2>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Country of employment</p>
+                    <p className="mt-2 font-medium text-slate-800">{employee.countryOfEmployment || "—"}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bank name</p>
                     <p className="mt-2 font-medium text-slate-800">{employee.bankName || "—"}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Account holder</p>
+                    <p className="mt-2 font-medium text-slate-800">{employee.accountHolderName || "—"}</p>
                   </div>
                   <div className="rounded-xl bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Account number</p>
                     <AccountNumber employeeId={id} masked={employee.accountNumberMasked} />
                   </div>
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Bank branch</p>
+                    <p className="mt-2 font-medium text-slate-800">{employee.bankBranch || "—"}</p>
+                  </div>
+                  <div className="rounded-xl bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {employee.countryCode === "IN" ? "IFSC code" : "Branch code"}
+                    </p>
+                    <p className="mt-2 font-medium text-slate-800">
+                      {employee.countryCode === "IN"
+                        ? employee.ifscCode || "—"
+                        : employee.bankBranchCode || "—"}
+                    </p>
+                  </div>
+                  {!isEmployeeBankDetailsComplete(employee) && (
+                    <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800 sm:col-span-2">
+                      Bank details are incomplete. HR should review and complete the required fields.
+                    </p>
+                  )}
                 </>
               )}
             </div>

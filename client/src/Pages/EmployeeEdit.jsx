@@ -10,7 +10,12 @@ import {
   updateUser,
 } from "../api/userApi";
 import PasswordConfirmDialog from "../components/PasswordConfirmDialog";
-import { OTHER_BANK, bankOptions } from "../utils/bank";
+import {
+  EMPLOYMENT_COUNTRIES,
+  OTHER_BANK,
+  bankOptions,
+  isEmployeeBankDetailsComplete,
+} from "../utils/bank";
 import { isReauthRequired } from "../utils/reauth";
 
 // Which dropdown option a saved bank name belongs to; unknown names are "Others".
@@ -30,13 +35,12 @@ const TITLES = ["Mr.", "Ms.", "Mrs.", "Miss", "Dr."];
 const editableFields = [
   ["name", "Name", "text"],
   ["email", "Company Email", "email"],
-  ["password", "New password (leave blank to keep current)", "password"],
   ["personalEmail", "Personal email", "email"],
   ["phone", "Phone number", "tel"],
   ["dateOfBirth", "Date of birth", "date"],
 ];
 // Existing employees may not have these yet, so they are not required.
-const optionalFields = ["password", "personalEmail", "phone", "dateOfBirth"];
+const optionalFields = ["personalEmail", "phone", "dateOfBirth"];
 
 export default function EmployeeEdit() {
   const { id } = useParams();
@@ -54,8 +58,14 @@ export default function EmployeeEdit() {
   useEffect(() => {
     Promise.all([getUserById(id), getEmployeeOptions()])
       .then(([employeeResponse, optionsResponse]) => {
-        setForm({ ...employeeResponse.data.data, password: "" });
-        setBankChoice(bankChoiceFor(employeeResponse.data.data.bankName, bankOptions(optionsResponse.data.data.banks)));
+        setForm(employeeResponse.data.data);
+        setBankChoice(bankChoiceFor(
+          employeeResponse.data.data.bankName,
+          bankOptions(
+            employeeResponse.data.data.countryCode,
+            optionsResponse.data.data.banksByCountry?.[employeeResponse.data.data.countryCode],
+          ),
+        ));
         setOptions(optionsResponse.data.data);
       })
       .catch((requestError) =>
@@ -65,6 +75,22 @@ export default function EmployeeEdit() {
 
   const updateField = (event) => {
     const { name, value, type } = event.target;
+    if (name === "countryCode") {
+      const country = options?.countries?.find((item) => item.code === value)
+        || EMPLOYMENT_COUNTRIES.find((item) => item.code === value);
+      const nextBanks = bankOptions(
+        value,
+        options?.banksByCountry?.[value],
+      );
+      setBankChoice(bankChoiceFor(form?.bankName || "", nextBanks));
+      setForm((current) => ({
+        ...current,
+        countryCode: value,
+        countryOfEmployment: country?.name || "",
+        ifscCode: value === "IN" ? current.ifscCode || "" : "",
+      }));
+      return;
+    }
     setForm((current) => ({
       ...current,
       [name]: type === "number" ? (value === "" ? "" : Number(value)) : value,
@@ -77,11 +103,16 @@ export default function EmployeeEdit() {
     // "Others" starts empty so HR types the bank name; a listed bank is saved as-is.
     setForm((current) => ({
       ...current,
-      bankName: choice === OTHER_BANK ? (banks.includes(current.bankName) ? "" : current.bankName || "") : choice,
+      bankName: choice === OTHER_BANK
+        ? (banks.includes(current.bankName) ? "" : current.bankName || "")
+        : choice,
     }));
   };
 
-  const banks = bankOptions(options?.banks);
+  const banks = bankOptions(
+    form?.countryCode,
+    options?.banksByCountry?.[form?.countryCode],
+  );
 
   const selectFields = {
     role: ["Role", options?.roles || []],
@@ -115,10 +146,11 @@ export default function EmployeeEdit() {
     setSaving(true);
     setError("");
     const payload = { ...form };
-    if (!payload.password) delete payload.password;
     delete payload.id;
     delete payload.createdAt;
     delete payload.accountNumberMasked;
+    delete payload.uid;
+    delete payload.isAuthenticationLinked;
     // A typed name that matches a listed bank (ignoring case) is saved with the listed spelling.
     const typedBank = String(payload.bankName || "").trim().toLowerCase();
     payload.bankName = banks.find((bank) => bank.toLowerCase() === typedBank) || payload.bankName;
@@ -164,8 +196,7 @@ export default function EmployeeEdit() {
                 ["department", ...selectFields.department, "select"],
                 ["status", ...selectFields.status, "select"],
                 ["assignedTeamLead", ...selectFields.assignedTeamLead, "select"],
-                editableFields[2],
-                ...editableFields.slice(3),
+                ...editableFields.slice(2),
               ].map(([key, label, type, inputType]) => (
                 <label key={key} className="text-sm font-semibold text-slate-700">
                   {label}
@@ -239,8 +270,27 @@ export default function EmployeeEdit() {
               ))}
               <div className="border-t border-slate-200 pt-5 sm:col-span-2">
                 <h2 className="text-lg font-bold text-slate-800">Bank details</h2>
-                <p className="mt-1 text-sm text-slate-500">Optional. Used for salary payments.</p>
+                <p className="mt-1 text-sm text-slate-500">Bank information is stored separately from salary currency and payroll settings.</p>
+                {!isEmployeeBankDetailsComplete(form) && (
+                  <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">
+                    Bank details are incomplete. Complete the required fields for this employee's country.
+                  </p>
+                )}
               </div>
+              <label className="text-sm font-semibold text-slate-700">
+                Country of employment
+                <select
+                  name="countryCode"
+                  value={form.countryCode || ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                >
+                  <option value="">Not set</option>
+                  {(options?.countries || EMPLOYMENT_COUNTRIES).map((country) => (
+                    <option key={country.code} value={country.code}>{country.name}</option>
+                  ))}
+                </select>
+              </label>
               <label className="text-sm font-semibold text-slate-700">
                 Bank name
                 <select
@@ -265,6 +315,49 @@ export default function EmployeeEdit() {
                     value={form.bankName ?? ""}
                     onChange={updateField}
                     placeholder="Enter the bank name"
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  />
+                </label>
+              )}
+              <label className="text-sm font-semibold text-slate-700">
+                Account holder name
+                <input
+                  maxLength={120}
+                  name="accountHolderName"
+                  value={form.accountHolderName ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Bank branch
+                <input
+                  maxLength={100}
+                  name="bankBranch"
+                  value={form.bankBranch ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Branch code
+                <input
+                  maxLength={20}
+                  name="bankBranchCode"
+                  value={form.bankBranchCode ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              {form.countryCode === "IN" && (
+                <label className="text-sm font-semibold text-slate-700">
+                  IFSC code
+                  <input
+                    maxLength={11}
+                    name="ifscCode"
+                    value={form.ifscCode ?? ""}
+                    onChange={updateField}
+                    placeholder="e.g. HDFC0001234"
                     className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                   />
                 </label>

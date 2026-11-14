@@ -1,24 +1,17 @@
 import * as userService
 from "../services/userService.js";
 import { resetBirthdayReminderCheck } from "../services/birthdayService.js";
+import {
+  isRecentlyAuthenticated,
+  maskAccountNumber,
+} from "../utils/employeeDirectory.js";
 
-// Account numbers never leave the server in full except through getAccountNumber, which
-// requires a password confirmed within the last few minutes. HR and the employee themselves
-// see the bank name and a masked number; other roles see no bank details at all.
-const REAUTH_WINDOW_SECONDS = 5 * 60;
-
-const maskAccountNumber = (value) => {
-  const digits = String(value || "");
-  if (!digits) return "";
-  if (digits.length <= 6) return `${"*".repeat(Math.max(digits.length - 2, 0))}${digits.slice(-2)}`;
-  return `${digits.slice(0, 3)}${"*".repeat(digits.length - 6)}${digits.slice(-3)}`;
-};
-
+// Account numbers leave the server in full only through the reauthenticated HR endpoint.
 const canSeeBank = (employeeId, viewer) => viewer.role === "HR" || employeeId === viewer.id;
 
 // Firebase sets auth_time when the user last entered their password (login or re-auth).
 const recentlyAuthenticated = (viewer) =>
-  Number.isFinite(viewer.auth_time) && Date.now() / 1000 - viewer.auth_time <= REAUTH_WINDOW_SECONDS;
+  isRecentlyAuthenticated(viewer.auth_time, Date.now());
 
 const reauthRequired = (res) =>
   res.status(403).json({
@@ -29,7 +22,8 @@ const reauthRequired = (res) =>
 
 const forViewer = (employee, viewer) => {
   if (!employee) return employee;
-  const { accountNumber, ...visible } = employee;
+  const { accountNumber, uid, ...visible } = employee;
+  visible.isAuthenticationLinked = Boolean(uid);
   if (!canSeeBank(employee.id, viewer)) {
     delete visible.bankName;
     return visible;
@@ -85,30 +79,42 @@ export const getEmployeeOptions = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const { name, email, password, role, department } = req.body;
-    if (!name || !email || !password || !role || !department) {
+    if (
+      Object.prototype.hasOwnProperty.call(req.body || {}, "password") ||
+      Object.prototype.hasOwnProperty.call(req.body || {}, "uid")
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Name, email, password, role and department are required",
+        message: "Authentication credentials are not accepted for employee directory records.",
       });
     }
 
-    const user = await userService.createUserService({
-      name,
-      email,
-      password,
-      role,
-      department,
+    const user = await userService.createUserService(req.body || {});
+    return res.status(201).json({
+      success: true,
+      data: forViewer(user, req.user),
     });
-    return res.status(201).json({ success: true, data: user });
   } catch (error) {
-    if (error.code === "23505") {
-      return res.status(409).json({
-        success: false,
-        message: "An employee with this email already exists",
-      });
-    }
-    return res.status(500).json({ success: false, message: error.message });
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not create employee directory record.");
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not create employee directory record." : error.message,
+    });
+  }
+};
+
+export const importEmployeesCsv = async (req, res) => {
+  try {
+    const result = await userService.importEmployeesCsvService(req.body?.content);
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not import employee directory CSV.");
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not import employee directory CSV." : error.message,
+    });
   }
 };
 
@@ -166,33 +172,32 @@ export const getAccountNumber = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
-    if (req.body.accountNumber !== undefined && !recentlyAuthenticated(req.user)) {
+    const body = { ...(req.body || {}) };
+    if (body.accountNumber !== undefined && !recentlyAuthenticated(req.user)) {
       return reauthRequired(res);
     }
     // Account numbers are stored as digits only, without spaces or dashes.
-    if (typeof req.body.accountNumber === "string") {
-      req.body.accountNumber = req.body.accountNumber.replace(/[\s-]/g, "");
+    if (typeof body.accountNumber === "string") {
+      body.accountNumber = body.accountNumber.replace(/[\s-]/g, "");
     }
-    if (typeof req.body.bankName === "string") req.body.bankName = req.body.bankName.trim();
-    const validationError = personalDetailsError(req.body) || bankDetailsError(req.body);
+    if (typeof body.bankName === "string") body.bankName = body.bankName.trim();
+    const validationError = personalDetailsError(body) || bankDetailsError(body);
     if (validationError) {
       return res.status(400).json({ success: false, message: validationError });
     }
-    const user = await userService.updateUserService(req.params.id, req.body);
+    const user = await userService.updateUserService(req.params.id, body);
     if (!user) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
-    if (req.body.dateOfBirth !== undefined) resetBirthdayReminderCheck();
-    if (req.body.bankName) await userService.rememberBankName(req.body.bankName);
+    if (body.dateOfBirth !== undefined) resetBirthdayReminderCheck();
     return res.status(200).json({ success: true, data: forViewer(user, req.user) });
   } catch (error) {
-    if (error.code === "23505") {
-      return res.status(409).json({
-        success: false,
-        message: "An employee with this email already exists",
-      });
-    }
-    return res.status(500).json({ success: false, message: error.message });
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not update employee directory record.");
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not update employee directory record." : error.message,
+    });
   }
 };
 
@@ -202,9 +207,9 @@ export const disableUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
-    return res.status(200).json({ success: true, data: user });
+    return res.status(200).json({ success: true, data: forViewer(user, req.user) });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };
 // Photos are resized in the browser (256 px JPEG), so they are only a few tens of KB.
@@ -220,7 +225,7 @@ export const getProfilePhoto = async (req, res) => {
   }
 };
 
-// Everyone manages only their own photo.
+// Profile photo operations remain available only to authenticated HR sessions.
 export const saveProfilePhoto = async (req, res) => {
   try {
     const { mime, data } = req.body;

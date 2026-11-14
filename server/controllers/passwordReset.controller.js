@@ -1,6 +1,7 @@
-import { firebaseAuth } from "../config/firebase.js";
+import { firebaseAuth, firestore } from "../config/firebase.js";
 import { allowedOrigins } from "../config/origins.js";
 import { isMailConfigured, sendPasswordResetMail } from "../services/mailService.js";
+import { isActiveHrRecord } from "../utils/employeeDirectory.js";
 
 // Firebase won't let this project point its reset emails at our own page, so the server
 // creates the reset code with the Admin SDK and emails a link to /reset-password itself.
@@ -23,7 +24,7 @@ const frontendUrl = (req) => {
 };
 
 export const requestPasswordReset = async (req, res) => {
-  // The client falls back to Firebase's own reset email when this isn't set up.
+  // Do not fall back to Firebase's generic reset email; only HR-linked records may reset.
   if (!isMailConfigured()) {
     return res.status(503).json({ success: false, code: "MAIL_NOT_CONFIGURED", message: "Email is not configured" });
   }
@@ -44,6 +45,17 @@ export const requestPasswordReset = async (req, res) => {
       throw error;
     });
     if (!user || user.disabled) return done();
+    const employeeSnapshot = await firestore
+      .collection("employees")
+      .where("uid", "==", user.uid)
+      .limit(1)
+      .get();
+    if (
+      employeeSnapshot.empty ||
+      !isActiveHrRecord(employeeSnapshot.docs[0].data())
+    ) {
+      return done();
+    }
 
     const firebaseLink = await firebaseAuth.generatePasswordResetLink(email);
     const code = new URL(firebaseLink).searchParams.get("oobCode");

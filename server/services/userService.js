@@ -1,8 +1,16 @@
-import { firebaseAuth, firestore } from "../config/firebase.js";
+import { firestore } from "../config/firebase.js";
+import {
+  employeeEmailIndexId,
+  EMPLOYMENT_COUNTRIES,
+  normalizeEmployeeEmail,
+  validateEmployeeUpdate,
+} from "../utils/employeeDirectory.js";
+import { makeEmployeeDirectoryPersistence } from "./employeeDirectoryPersistence.js";
 
 const employeeCollection = firestore.collection("employees");
-// Bank names typed under "Others", so they appear in the bank dropdown next time.
-const savedBanksDoc = firestore.collection("settings").doc("banks");
+const employeeEmailIndexes = firestore.collection("employeeEmailIndexes");
+const legacyBanksDoc = firestore.collection("settings").doc("banks");
+const employeePersistence = makeEmployeeDirectoryPersistence(firestore);
 
 const toEmployee = (snapshot) => ({ id: snapshot.id, ...snapshot.data() });
 
@@ -20,10 +28,36 @@ export const getEmployeeOptionsService = async () => {
   const snapshot = await employeeCollection.get();
   const employees = snapshot.docs.map(toEmployee);
   const unique = (key) => [...new Set(employees.map((employee) => employee[key]).filter(Boolean))].sort();
-  const savedBanks = (await savedBanksDoc.get()).data()?.names || [];
+  const savedBanks = await Promise.all(
+    EMPLOYMENT_COUNTRIES.map(async (country) => {
+      const countryDoc = await firestore
+        .collection("settings")
+        .doc(`banks_${country.code.toLowerCase()}`)
+        .get();
+      const legacy = country.code === "LK"
+        ? (await legacyBanksDoc.get()).data()?.names || []
+        : [];
+      return [
+        country.code,
+        [...new Set([...(countryDoc.data()?.names || []), ...legacy])],
+      ];
+    }),
+  );
   return {
-    // Includes names saved on employees before the list existed.
-    banks: [...new Set([...savedBanks, ...unique("bankName")])],
+    countries: EMPLOYMENT_COUNTRIES.map(({ code, name }) => ({ code, name })),
+    banksByCountry: Object.fromEntries(
+      savedBanks.map(([code, names]) => [
+        code,
+        [...new Set([
+          ...EMPLOYMENT_COUNTRIES.find((country) => country.code === code).banks,
+          ...names,
+          ...employees
+            .filter((employee) => employee.countryCode === code)
+            .map((employee) => employee.bankName)
+            .filter(Boolean),
+        ])],
+      ]),
+    ),
     roles: unique("role"),
     departments: unique("department"),
     statuses: unique("status"),
@@ -34,41 +68,11 @@ export const getEmployeeOptionsService = async () => {
   };
 };
 
-const nextEmployeeId = async () => {
-  const snapshot = await employeeCollection.get();
-  const highest = snapshot.docs.reduce((max, employee) => {
-    const number = Number(employee.id.replace(/^EMP/, ""));
-    return Number.isFinite(number) ? Math.max(max, number) : max;
-  }, 0);
-  return `EMP${String(highest + 1).padStart(3, "0")}`;
-};
+const employeeEmailIndexReference = (email) =>
+  employeeEmailIndexes.doc(employeeEmailIndexId(email));
 
-export const createUserService = async ({ name, email, password, role, department }) => {
-  const normalizedEmail = email.trim().toLowerCase();
-  const duplicate = await employeeCollection.where("email", "==", normalizedEmail).limit(1).get();
-  if (!duplicate.empty) {
-    const error = new Error("An employee with this email already exists");
-    error.code = "already-exists";
-    throw error;
-  }
-  const authUser = await firebaseAuth.createUser({ email: normalizedEmail, password, displayName: name.trim() });
-  const id = await nextEmployeeId();
-  const employee = {
-    uid: authUser.uid,
-    name: name.trim(),
-    email: normalizedEmail,
-    department,
-    status: "Active",
-    role,
-    assignedTeamLead: "Not assigned",
-    workingHours: 8,
-    totalBreakHours: 1,
-    monthlyTotalWorkingHours: 240,
-    createdAt: new Date().toISOString(),
-  };
-  await employeeCollection.doc(id).set(employee);
-  return { id, ...employee };
-};
+export const createUserService = employeePersistence.create;
+export const importEmployeesCsvService = employeePersistence.importCsv;
 
 export const getUserByIdService = async (id) => {
   const snapshot = await employeeCollection.doc(id).get();
@@ -77,49 +81,63 @@ export const getUserByIdService = async (id) => {
 
 export const updateUserService = async (id, data) => {
   const reference = employeeCollection.doc(id);
-  const snapshot = await reference.get();
-  if (!snapshot.exists) return null;
-  const current = snapshot.data();
-  const allowed = [
-    "name", "email", "department", "role", "status", "assignedTeamLead",
-    "workingHours", "totalBreakHours", "monthlyTotalWorkingHours",
-    // Used to pre-fill offer and service letters.
-    "title", "designation", "address", "nationalId", "joiningDate", "lastWorkingDate",
-    "personalEmail", "phone", "dateOfBirth",
-    "bankName", "accountNumber",
-  ];
-  const updates = Object.fromEntries(
-    allowed.filter((field) => data[field] !== undefined).map((field) => [field, data[field]]),
-  );
-  if (data.email && data.email !== current.email) {
-    await firebaseAuth.updateUser(current.uid, { email: data.email.trim().toLowerCase() });
-    updates.email = data.email.trim().toLowerCase();
-  }
-  if (data.name) await firebaseAuth.updateUser(current.uid, { displayName: data.name.trim() });
-  if (data.password) await firebaseAuth.updateUser(current.uid, { password: data.password });
-  if (Object.keys(updates).length) await reference.update(updates);
-  return getUserByIdService(id);
+  const updated = await firestore.runTransaction(async (transaction) => {
+    const freshSnapshot = await transaction.get(reference);
+    if (!freshSnapshot.exists) return;
+    const current = { ...freshSnapshot.data(), id: freshSnapshot.id };
+    const updates = validateEmployeeUpdate(current, data);
+    const emailChanged =
+      updates.email !== undefined &&
+      normalizeEmployeeEmail(updates.email) !== normalizeEmployeeEmail(current.email);
+    const nextEmailReference = emailChanged
+      ? employeeEmailIndexReference(updates.email)
+      : null;
+    const previousEmailReference = employeeEmailIndexReference(current.email);
+    const currentEmailIndex = await transaction.get(previousEmailReference);
+    const employeesSnapshot = await transaction.get(employeeCollection);
+    if (emailChanged) {
+      const emailIndexSnapshot = await transaction.get(nextEmailReference);
+      if (
+        (emailIndexSnapshot.exists &&
+          emailIndexSnapshot.data().employeeId !== id) ||
+        employeesSnapshot.docs.some(
+          (document) =>
+            document.id !== id &&
+            normalizeEmployeeEmail(document.data().email) === updates.email,
+        )
+      ) {
+        throw duplicateEmployeeError();
+      }
+      transaction.create(nextEmailReference, { employeeId: id });
+      if (
+        currentEmailIndex.exists &&
+        currentEmailIndex.data().employeeId === id
+      ) {
+        transaction.delete(previousEmailReference);
+      }
+    } else if (!currentEmailIndex.exists && current.email) {
+      transaction.create(previousEmailReference, { employeeId: id });
+    }
+    if (Object.keys(updates).length) transaction.update(reference, updates);
+    return true;
+  });
+  return updated ? getUserByIdService(id) : null;
 };
 
 export const disableUserService = async (id) => {
   const reference = employeeCollection.doc(id);
-  const snapshot = await reference.get();
-  if (!snapshot.exists) return null;
-  await reference.update({ status: "Not Active" });
-  await firebaseAuth.updateUser(snapshot.data().uid, { disabled: true });
-  return getUserByIdService(id);
-};
-
-// Adds a bank name to the saved list unless it is already there (ignoring case).
-export const rememberBankName = async (bankName) => {
-  const name = String(bankName || "").trim();
-  if (!name) return;
-  await firestore.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(savedBanksDoc);
-    const names = snapshot.data()?.names || [];
-    if (names.some((saved) => saved.toLowerCase() === name.toLowerCase())) return;
-    transaction.set(savedBanksDoc, { names: [...names, name].sort((a, b) => a.localeCompare(b)) });
+  const updated = await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(reference);
+    if (!snapshot.exists) return false;
+    if (snapshot.data().uid) {
+      const error = new Error("Authentication-linked records cannot be deactivated through employee directory management.");
+      error.statusCode = 403;
+      throw error;
+    }
+    transaction.update(reference, { status: "Not Active" });
+    return true;
   });
+  return updated ? getUserByIdService(id) : null;
 };
 
 // Profile photos live in their own collection so employee lists stay small.

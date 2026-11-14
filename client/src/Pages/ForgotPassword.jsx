@@ -1,30 +1,14 @@
 import { useState } from "react";
 import { ArrowLeft, Loader2, Mail, MailCheck } from "lucide-react";
 import { Link } from "react-router-dom";
-import { sendPasswordResetEmail } from "firebase/auth";
-import { firebaseAuth } from "../config/firebase";
 import { requestPasswordReset } from "../api/authApi";
 import AuthShell from "../components/AuthShell";
-import { passwordErrorMessage } from "../utils/passwords";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [sentTo, setSentTo] = useState("");
   const [error, setError] = useState("");
-
-  // Fallback when the server has no email account set up: Firebase's own email, whose link
-  // opens Firebase's reset page and then returns to the login page.
-  const sendWithFirebase = async (address) => {
-    try {
-      await sendPasswordResetEmail(firebaseAuth, address, { url: `${window.location.origin}/login` });
-      setSentTo(address);
-    } catch (sendError) {
-      // Don't reveal whether an account exists for this email.
-      if (sendError.code === "auth/user-not-found") setSentTo(address);
-      else setError(passwordErrorMessage(sendError));
-    }
-  };
 
   const submit = async (event) => {
     event.preventDefault();
@@ -38,7 +22,7 @@ export default function ForgotPassword() {
       setSentTo(address);
     } catch (serverError) {
       if (serverError.response?.data?.code === "MAIL_NOT_CONFIGURED") {
-        await sendWithFirebase(address);
+        setError("Password reset email is not configured. Contact your HR system administrator.");
       } else {
         setError(serverError.response?.data?.message || "We couldn't send the email. Please try again.");
       }

@@ -7,10 +7,6 @@ const API = axios.create({
   withCredentials: true,
 });
 
-export const registerUser = (userData) => {
-  return API.post("/register", userData);
-};
-
 export const loginUser = async ({ email, password }) => {
   const credentials = await signInWithEmailAndPassword(firebaseAuth, email, password);
   const idToken = await credentials.user.getIdToken();
