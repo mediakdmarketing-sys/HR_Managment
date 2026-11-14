@@ -7,12 +7,22 @@ const authConfig = () => ({
 
 export const getLeaveRequests = () => axios.get(`${API_BASE}/leaves`, authConfig());
 export const createLeaveRequest = (data) => axios.post(`${API_BASE}/leaves`, data, authConfig());
-export const updateLeaveStatus = (id, status) =>
-  axios.patch(`${API_BASE}/leaves/${id}/status`, { status }, authConfig());
+export const getLeaveEmployees = () =>
+  axios.get(`${API_BASE}/leaves/employees`, authConfig());
+export const importLeaveCsv = (data) =>
+  axios.post(`${API_BASE}/leaves/import`, data, authConfig());
+export const updateLeaveStatus = (id, status, expectedAllocation) =>
+  axios.patch(
+    `${API_BASE}/leaves/${id}/status`,
+    { status, expectedAllocation },
+    authConfig(),
+  );
 export const getLeavePolicies = () =>
   axios.get(`${API_BASE}/leaves/policies`, authConfig());
 export const createLeavePolicy = (data) =>
   axios.post(`${API_BASE}/leaves/policies`, data, authConfig());
+export const getLeaveAllocationPreview = (id) =>
+  axios.get(`${API_BASE}/leaves/${id}/allocation`, authConfig());
 export const getLeaveAttachment = (id) =>
   axios.get(`${API_BASE}/leaves/${id}/attachment`, {
     ...authConfig(),

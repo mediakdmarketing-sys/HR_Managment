@@ -7,8 +7,20 @@ import {
   normalizeLeavePolicyName,
   validateLeavePolicyName,
 } from "../utils/leavePolicy.js";
+import {
+  calculateLeaveRequestAllocation,
+} from "../utils/leaveBalance.js";
+import {
+  createValidatedLeaveRequest,
+  formatLeaveNumber,
+  isDuplicateLeaveRequest,
+  leaveRequestIdentity,
+  nextLeaveNumber,
+  processLeaveCsv,
+} from "../utils/leaveRequestImport.js";
 
 const leaves = firestore.collection("leaveRequests");
+const leaveRequestCounters = firestore.collection("leaveRequestCounters");
 const employees = firestore.collection("employees");
 const notifications = firestore.collection("notifications");
 const leavePolicies = firestore.collection("leavePolicies");
@@ -28,6 +40,55 @@ export const getLeavePolicies = async () => {
     id: document.id,
   }));
   return mergeLeavePolicies(savedPolicies);
+};
+
+export const getLeaveEmployeesForHR = async () => {
+  const snapshot = await employees.where("status", "==", "Active").get();
+  return snapshot.docs
+    .map((document) => ({
+      id: document.id,
+      name: String(document.data().name || ""),
+      email: String(document.data().email || "").trim().toLowerCase(),
+      department: String(document.data().department || ""),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+};
+
+export const getLeaveAllocationPreview = async (id, reviewer) => {
+  const requestSnapshot = await leaves.doc(id).get();
+  if (!requestSnapshot.exists) return null;
+  const request = { id: requestSnapshot.id, ...requestSnapshot.data() };
+  if (request.status !== "Pending") {
+    throw httpError(409, "Only pending leave requests can be previewed.");
+  }
+
+  const [employee, policySnapshot, leaveSnapshot] = await Promise.all([
+    employeeById(request.employeeId),
+    leavePolicies.get(),
+    leaves.where("employeeId", "==", request.employeeId).get(),
+  ]);
+  if (!employee) throw httpError(404, "Employee not found");
+  if (!canReviewRequest(request, employee, reviewer)) return null;
+
+  const policies = mergeLeavePolicies(
+    policySnapshot.docs.map((document) => ({
+      ...document.data(),
+      id: document.id,
+    })),
+  );
+  const leaveRequests = leaveSnapshot.docs.map((document) => ({
+    ...document.data(),
+    id: document.id,
+  }));
+  return {
+    employeeName: employee.name || "",
+    ...calculateLeaveRequestAllocation({
+      request,
+      employee,
+      policies,
+      leaveRequests,
+    }),
+  };
 };
 
 export const createLeavePolicy = async ({ name, createdBy }) => {
@@ -111,27 +172,10 @@ const serialize = (snapshot, employee) => ({
 const attachments = firestore.collection("leaveAttachments");
 const CHUNK_SIZE = 900 * 1024;
 
-const saveAttachment = async (requestId, data) => {
-  if (!data) return {};
-  const buffer = Buffer.from(data, "base64");
-  const batch = firestore.batch();
-  let chunkCount = 0;
-  for (let offset = 0; offset < buffer.length; offset += CHUNK_SIZE) {
-    batch.set(attachments.doc(`${requestId}_${chunkCount}`), {
-      requestId,
-      index: chunkCount,
-      data: buffer.subarray(offset, offset + CHUNK_SIZE),
-    });
-    chunkCount += 1;
-  }
-  await batch.commit();
-  return { attachmentChunks: chunkCount, attachmentSize: buffer.length };
-};
-
-// HR leave goes to Managers; everyone else's goes to HR and their assigned team lead.
-// Nobody can review their own request.
+// HR can review every request except their own; nobody can review their own request.
 const canReviewRequest = (request, employee, user) => {
   if (request.employeeId === user.id) return false;
+  if (user.role === "HR") return true;
   if (employee?.role === "HR") return user.role === "Manager";
   return user.role === "HR" || employee?.assignedTeamLead === user.name;
 };
@@ -154,55 +198,202 @@ export const getLeaveRequests = async (user) => {
     .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 };
 
-export const createLeaveRequest = async ({
-  employeeId, type, startDate, endDate, days, reason, attachment, attachmentData, attachmentMime,
-}) => {
-  const employee = await employeeById(employeeId);
-  if (!employee) throw new Error("Employee not found");
-  // Also catches a double-clicked submit that reaches the server twice.
-  const existing = await leaves.where("employeeId", "==", employeeId).get();
-  const overlapping = existing.docs.some((doc) => {
-    const other = doc.data();
-    return (
-      ["Pending", "Approved"].includes(other.status) &&
-      other.startDate <= endDate &&
-      other.endDate >= startDate
-    );
-  });
-  if (overlapping) {
-    throw httpError(409, "You already have a pending or approved leave request for these dates");
-  }
-  const reference = leaves.doc();
-  const stored = await saveAttachment(reference.id, attachmentData);
-  const request = {
-    employeeId, type, startDate, endDate, days: Number(days), reason,
-    attachment: attachment || null,
-    attachmentMime: attachmentMime || null,
-    ...stored,
-    status: "Pending",
-    createdAt: new Date().toISOString(),
-  };
-  await reference.set(request);
+const createRequestIfAbsent = async (candidate, createdBy, attachment = {}) => {
+  const { identityKey, documentId } = leaveRequestIdentity(candidate);
+  const reference = leaves.doc(documentId);
+  const counterReference = leaveRequestCounters.doc("sequence");
+  const employeeReference = employees.doc(candidate.employeeId);
+  const attachmentBuffer = attachment.attachmentData
+    ? Buffer.from(attachment.attachmentData, "base64")
+    : null;
+  const attachmentChunks = attachmentBuffer
+    ? Math.ceil(attachmentBuffer.length / CHUNK_SIZE)
+    : 0;
+  return firestore.runTransaction(async (transaction) => {
+    const [
+      employeeSnapshot,
+      identitySnapshot,
+      existingSnapshot,
+      policySnapshot,
+      counterSnapshot,
+    ] =
+      await Promise.all([
+        transaction.get(employeeReference),
+        transaction.get(reference),
+        transaction.get(leaves.where("employeeId", "==", candidate.employeeId)),
+        transaction.get(leavePolicies.doc(candidate.policyId)),
+        transaction.get(counterReference),
+      ]);
+    if (!employeeSnapshot.exists || employeeSnapshot.data().status !== "Active") {
+      throw httpError(422, "The selected employee no longer exists or is not active.");
+    }
+    const employee = { id: employeeSnapshot.id, ...employeeSnapshot.data() };
+    if (
+      candidate.employeeEmail &&
+      String(employee.email || "").trim().toLowerCase() !== candidate.employeeEmail
+    ) {
+      throw httpError(409, "The employee record changed. Reload the employee list and try again.");
+    }
+    if (
+      policySnapshot.exists &&
+      normalizeLeavePolicyName(policySnapshot.data().name) !==
+        normalizeLeavePolicyName(candidate.type)
+    ) {
+      throw httpError(409, "The leave policy changed. Reload policies and try again.");
+    }
+    if (
+      !policySnapshot.exists &&
+      !DEFAULT_LEAVE_POLICIES.some((policy) => policy.id === candidate.policyId)
+    ) {
+      throw httpError(422, "The selected leave policy no longer exists.");
+    }
+    if (identitySnapshot.exists) return { duplicate: true };
 
-  const allEmployees = await employees.get();
-  const recipients = allEmployees.docs
-    .map((doc) => ({ id: doc.id, ...doc.data() }))
-    .filter((candidate) =>
-      candidate.status === "Active" &&
-      canReviewRequest({ employeeId }, employee, candidate),
+    const duplicate = existingSnapshot.docs.some((document) =>
+      isDuplicateLeaveRequest(
+        { id: document.id, ...document.data() },
+        candidate,
+      ),
     );
-  await Promise.all(recipients.map((recipient) =>
-    notifications.doc().set({
-      recipientEmployeeId: recipient.id,
-      type: "leave_request",
-      title: "New leave request",
-      message: `${employee.name} requested ${days} day(s) of ${type}.`,
-      entityId: reference.id,
-      isRead: false,
-      createdAt: new Date().toISOString(),
-    }),
-  ));
-  return getLeaveRequestById(reference.id);
+    if (duplicate) return { duplicate: true };
+
+    const historicalRequests = counterSnapshot.exists
+      ? []
+      : (await transaction.get(leaves)).docs.map((document) => document.data());
+    const sequenceNumber = nextLeaveNumber(
+      counterSnapshot.exists ? counterSnapshot.data()?.nextNumber : null,
+      historicalRequests,
+    );
+    const leaveNumber = formatLeaveNumber(sequenceNumber);
+    if (counterSnapshot.exists) {
+      transaction.update(counterReference, { nextNumber: sequenceNumber + 1 });
+    } else {
+      transaction.create(counterReference, { nextNumber: sequenceNumber + 1 });
+    }
+
+    const createdAt = new Date().toISOString();
+    const stored = {
+      employeeId: employee.id,
+      leaveNumber,
+      type: candidate.type,
+      leavePolicyId: candidate.policyId,
+      startDate: candidate.startDate,
+      endDate: candidate.endDate,
+      days: candidate.days,
+      reason: candidate.reason,
+      status: "Pending",
+      sourceType: candidate.sourceType,
+      sourceName: candidate.sourceName,
+      sourceSubmittedAt: candidate.sourceSubmittedAt || null,
+      externalRequestId: candidate.externalRequestId || null,
+      idempotencyKey: identityKey,
+      createdBy,
+      createdAt,
+      attachment: attachment.attachment || null,
+      attachmentMime: attachment.attachmentMime || null,
+      ...(attachmentBuffer
+        ? {
+            attachmentChunks,
+            attachmentSize: attachmentBuffer.length,
+          }
+        : {}),
+    };
+    transaction.create(reference, stored);
+    if (attachmentBuffer) {
+      for (let index = 0; index < attachmentChunks; index += 1) {
+        const offset = index * CHUNK_SIZE;
+        transaction.create(attachments.doc(`${reference.id}_${index}`), {
+          requestId: reference.id,
+          index,
+          data: attachmentBuffer.subarray(offset, offset + CHUNK_SIZE),
+        });
+      }
+    }
+    return {
+      duplicate: false,
+      request: {
+        id: reference.id,
+        ...stored,
+        employeeName: String(employee.name || ""),
+        employeeEmail: String(employee.email || ""),
+      },
+    };
+  });
+};
+
+const loadLeaveRequestCreationData = async () => {
+  const [employeeSnapshot, policies] = await Promise.all([
+    employees.get(),
+    getLeavePolicies(),
+  ]);
+  return {
+    employees: employeeSnapshot.docs.map((document) => ({
+      id: document.id,
+      ...document.data(),
+    })),
+    policies,
+  };
+};
+
+export const createLeaveRequest = async ({
+  employeeId,
+  employeeEmail,
+  type,
+  startDate,
+  endDate,
+  days,
+  reason,
+  sourceReference,
+  attachment,
+  attachmentData,
+  attachmentMime,
+  createdBy,
+}) => {
+  const { employees: employeeRecords, policies } =
+    await loadLeaveRequestCreationData();
+  return createValidatedLeaveRequest({
+    input: {
+      employeeId,
+      employeeEmail,
+      type,
+      startDate,
+      endDate,
+      days,
+      reason,
+      sourceReference,
+    },
+    employees: employeeRecords,
+    policies,
+    sourceType: "hr_manual",
+    sourceName: "HR manual entry",
+    createRequestIfAbsent: (candidate) =>
+      createRequestIfAbsent(candidate, createdBy, {
+        attachment,
+        attachmentData,
+        attachmentMime,
+      }),
+  });
+};
+
+export const importLeaveRequests = async ({
+  content,
+  sourceType,
+  sourceName,
+  dateFormat,
+  createdBy,
+}) => {
+  const { employees: employeeRecords, policies } =
+    await loadLeaveRequestCreationData();
+  return processLeaveCsv({
+    content,
+    employees: employeeRecords,
+    policies,
+    sourceType,
+    sourceName,
+    dateFormat,
+    createRequestIfAbsent: (candidate) =>
+      createRequestIfAbsent(candidate, createdBy),
+  });
 };
 
 export const getLeaveRequestById = async (id) => {
@@ -211,30 +402,102 @@ export const getLeaveRequestById = async (id) => {
   return serialize(snapshot, await employeeById(snapshot.data().employeeId));
 };
 
-export const updateLeaveStatus = async (id, status, reviewer) => {
+export const updateLeaveStatus = async (
+  id,
+  status,
+  reviewer,
+  expectedAllocation,
+) => {
   const reference = leaves.doc(id);
-  const snapshot = await reference.get();
-  if (!snapshot.exists) return null;
-  const request = snapshot.data();
-  const employee = await employeeById(request.employeeId);
-  if (!canReviewRequest(request, employee, reviewer)) return null;
-  // Check-and-set in a transaction so two clicks (or two reviewers) cannot both decide.
-  await firestore.runTransaction(async (transaction) => {
-    const current = await transaction.get(reference);
-    if (current.data().status !== "Pending") {
-      throw httpError(409, `This request was already ${current.data().status.toLowerCase()}`);
+  const decision = await firestore.runTransaction(async (transaction) => {
+    const currentSnapshot = await transaction.get(reference);
+    if (!currentSnapshot.exists) return null;
+    const currentRequest = {
+      id: currentSnapshot.id,
+      ...currentSnapshot.data(),
+    };
+    const employeeSnapshot = await transaction.get(
+      employees.doc(currentRequest.employeeId),
+    );
+    if (!employeeSnapshot.exists) return null;
+    const employee = { id: employeeSnapshot.id, ...employeeSnapshot.data() };
+    if (!canReviewRequest(currentRequest, employee, reviewer)) return null;
+    if (currentRequest.status !== "Pending") {
+      throw httpError(
+        409,
+        `This request was already ${currentRequest.status.toLowerCase()}`,
+      );
     }
+
+    let allocation = null;
+    if (status === "Approved") {
+      const [policySnapshot, leaveSnapshot] = await Promise.all([
+        transaction.get(leavePolicies),
+        transaction.get(
+          leaves.where("employeeId", "==", currentRequest.employeeId),
+        ),
+      ]);
+      const policies = mergeLeavePolicies(
+        policySnapshot.docs.map((document) => ({
+          ...document.data(),
+          id: document.id,
+        })),
+      );
+      const leaveRequests = leaveSnapshot.docs.map((document) => ({
+        ...document.data(),
+        id: document.id,
+      }));
+      allocation = calculateLeaveRequestAllocation({
+        request: currentRequest,
+        employee,
+        policies,
+        leaveRequests,
+      });
+
+      if (expectedAllocation) {
+        const expectedPaidDays = Number(expectedAllocation.paidDays);
+        const expectedUnpaidDays = Number(expectedAllocation.unpaidDays);
+        if (
+          !Number.isFinite(expectedPaidDays) ||
+          !Number.isFinite(expectedUnpaidDays) ||
+          Math.abs(expectedPaidDays - allocation.paidDays) > 0.001 ||
+          Math.abs(expectedUnpaidDays - allocation.unpaidDays) > 0.001 ||
+          Number(expectedAllocation.leaveYear) !== allocation.leaveYear
+        ) {
+          throw httpError(
+            409,
+            "The available leave balance changed. Review the updated allocation before approving.",
+          );
+        }
+      }
+    }
+
     transaction.update(reference, {
       status,
       reviewedBy: reviewer.id,
       reviewedAt: new Date().toISOString(),
+      ...(allocation
+        ? {
+            paidDays: allocation.paidDays,
+            unpaidDays: allocation.unpaidDays,
+            paidLeaveYear: allocation.leaveYear,
+            paidLeaveTypeId: allocation.leaveTypeId,
+            paidLeaveBalanceBefore: allocation.availablePaidDays,
+          }
+        : {}),
     });
+    return { request: currentRequest, allocation };
   });
+  if (!decision) return null;
+
+  const allocationMessage = decision.allocation
+    ? ` (${decision.allocation.paidDays} paid, ${decision.allocation.unpaidDays} unpaid day(s))`
+    : "";
   await notifications.doc().set({
-    recipientEmployeeId: request.employeeId,
+    recipientEmployeeId: decision.request.employeeId,
     type: status === "Approved" ? "leave_approved" : "leave_rejected",
     title: `Leave request ${status.toLowerCase()}`,
-    message: `Your ${request.type} request (${request.startDate} to ${request.endDate}) was ${status.toLowerCase()} by ${reviewer.name}.`,
+    message: `Your ${decision.request.type} request (${decision.request.startDate} to ${decision.request.endDate}) was ${status.toLowerCase()} by ${reviewer.name}.${allocationMessage}`,
     entityId: id,
     isRead: false,
     createdAt: new Date().toISOString(),

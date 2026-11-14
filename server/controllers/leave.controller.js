@@ -31,6 +31,27 @@ export const addLeavePolicy = async (req, res) => {
   }
 };
 
+export const previewLeaveAllocation = async (req, res) => {
+  try {
+    const allocation = await leaveService.getLeaveAllocationPreview(
+      req.params.id,
+      req.user,
+    );
+    if (!allocation) {
+      return res.status(404).json({ success: false, message: "Leave request not found" });
+    }
+    return res.json({ success: true, data: allocation });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not calculate leave allocation.", error);
+    return res.status(statusCode).json({
+      success: false,
+      message:
+        statusCode === 500 ? "Could not calculate leave allocation." : error.message,
+    });
+  }
+};
+
 export const listLeaves = async (req, res) => {
   try {
     const requests = await leaveService.getLeaveRequests(req.user);
@@ -40,37 +61,46 @@ export const listLeaves = async (req, res) => {
   }
 };
 
+export const listLeaveEmployees = async (_req, res) => {
+  try {
+    const employees = await leaveService.getLeaveEmployeesForHR();
+    return res.json({ success: true, data: employees });
+  } catch (error) {
+    console.error("Could not load employees for leave requests.", error);
+    return res.status(500).json({
+      success: false,
+      message: "Could not load employees for leave requests.",
+    });
+  }
+};
+
 export const createLeave = async (req, res) => {
   try {
     const {
-      type,
-      startDate,
-      endDate,
-      days,
-      reason,
       attachment,
       attachmentData,
       attachmentMime,
-    } = req.body;
-    if (!type || !startDate || !endDate || !days || !reason) {
-      return res.status(400).json({
-        success: false,
-        message: "Leave type, dates, days and reason are required",
-      });
-    }
-    const allowedAttachmentTypes = [
-      "application/pdf",
-      "image/png",
-      "image/jpeg",
-    ];
+    } = req.body || {};
     if (attachmentData) {
-      if (!attachment || !allowedAttachmentTypes.includes(attachmentMime)) {
+      const allowedAttachmentTypes = [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+      ];
+      if (
+        typeof attachmentData !== "string" ||
+        !attachment ||
+        !allowedAttachmentTypes.includes(attachmentMime)
+      ) {
         return res.status(400).json({
           success: false,
           message: "Only PDF, PNG and JPEG attachments are allowed",
         });
       }
-      if (attachmentData.length > 7_000_000) {
+      if (
+        attachmentData.length > 7_000_000 ||
+        Buffer.from(attachmentData, "base64").length > 5 * 1024 * 1024
+      ) {
         return res.status(400).json({
           success: false,
           message: "Attachment must be 5 MB or smaller",
@@ -78,19 +108,47 @@ export const createLeave = async (req, res) => {
       }
     }
     const request = await leaveService.createLeaveRequest({
-      employeeId: req.user.id,
-      type,
-      startDate,
-      endDate,
-      days,
-      reason,
+      employeeId: req.body?.employeeId,
+      employeeEmail: req.body?.employeeEmail,
+      type: req.body?.leaveType || req.body?.type,
+      startDate: req.body?.startDate,
+      endDate: req.body?.endDate,
+      days: req.body?.days,
+      reason: req.body?.reason,
+      sourceReference: req.body?.sourceReference,
       attachment,
       attachmentData,
       attachmentMime,
+      createdBy: req.user.id,
     });
     return res.status(201).json({ success: true, data: request });
   } catch (error) {
-    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not create leave request.", error);
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not create leave request." : error.message,
+    });
+  }
+};
+
+export const importLeaveCsv = async (req, res) => {
+  try {
+    const result = await leaveService.importLeaveRequests({
+      content: req.body?.content,
+      sourceType: req.body?.sourceType,
+      sourceName: req.body?.sourceName,
+      dateFormat: req.body?.dateFormat,
+      createdBy: req.user.id,
+    });
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not import leave CSV.", error);
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not import leave CSV." : error.message,
+    });
   }
 };
 
@@ -103,6 +161,7 @@ export const changeLeaveStatus = async (req, res) => {
       req.params.id,
       req.body.status,
       req.user,
+      req.body.expectedAllocation,
     );
     if (!request) {
       return res.status(404).json({ success: false, message: "Leave request not found" });
