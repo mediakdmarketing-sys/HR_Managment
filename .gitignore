@@ -10,3 +10,12 @@ backups/
 auth-users*.json
 serviceAccount*.json
 *-firebase-adminsdk-*.json
+smart-hire-source
+reference-files
+/.smart-hire-inspect/
+/applicant-screening-system.zip
+
+# Local QA tooling output (browser console logs can contain API keys)
+.playwright-mcp/
+client/test-results/
+playwright-report/
