@@ -1,6 +1,7 @@
 
 import { useState } from "react";
 import {
+  ChevronDown,
   ChevronRight,
   LayoutDashboard,
   LogOut,
@@ -13,22 +14,40 @@ import {
   Wallet,
   CreditCard,
   IdCardLanyard,
+  BriefcaseBusiness,
+  SearchCheck,
+  MessageSquare,
+  CalendarDays,
+  Inbox,
+  Upload,
+  ListChecks,
+  Send,
+  Mail,
+  Bell,
+  Settings,
 } from "lucide-react";
 
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { logoutUser } from "../api/authApi";
 import { clearSession, getUser } from "../utils/auth";
 import { useMyPhoto } from "../utils/profilePhoto";
 import Avatar from "./Avatar";
+import {
+  getRecruitmentGroupForPath,
+  RECRUITMENT_NAVIGATION,
+} from "../navigation/recruitmentRoutes";
 
-// HR-only navigation
+// HR-only navigation - Organized logically with Notifications & Settings at the bottom
 const HR_NAV_ITEMS = [
+  ["/recruitment", BriefcaseBusiness, "Recruitment"],
   ["/employees", IdCardLanyard, "Employee Management"],
   ["/attendance", Timer, "Attendance & Work Hours"],
   ["/leave", FolderOutput, "Leave Management"],
   ["/payslip", CreditCard, "Payroll & Payslips"],
   ["/templates", FileSignature, "Letter Templates"],
   ["/expenses", Wallet, "Expense Tracker"],
+  ["/notifications", Bell, "Notifications"],
+  ["/settings", Settings, "Settings"],
 ];
 
 const Sidebar = () => {
@@ -40,6 +59,24 @@ const Sidebar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLogoutDialogOpen, setIsLogoutDialogOpen] =
     useState(false);
+  const [recruitmentExpansion, setRecruitmentExpansion] = useState(() => ({
+    pathname: location.pathname,
+    expanded: location.pathname.startsWith("/recruitment"),
+  }));
+  const [groupExpansion, setGroupExpansion] = useState(() => {
+    const activeGroup = getRecruitmentGroupForPath(location.pathname);
+    return {
+      pathname: location.pathname,
+      groups: activeGroup ? new Set([activeGroup]) : new Set(),
+    };
+  });
+  const recruitmentExpanded = recruitmentExpansion.pathname === location.pathname
+    ? recruitmentExpansion.expanded
+    : location.pathname.startsWith("/recruitment");
+  const activeGroup = getRecruitmentGroupForPath(location.pathname);
+  const expandedGroups = groupExpansion.pathname === location.pathname
+    ? groupExpansion.groups
+    : activeGroup ? new Set([activeGroup]) : new Set();
 
   const photo = useMyPhoto();
 
@@ -66,6 +103,18 @@ const Sidebar = () => {
         ? "bg-teal-50 text-teal-700"
         : ""
     } hover:bg-teal-50`;
+
+  const recruitmentLinkClassName = ({ isActive }) =>
+    `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+      isActive ? "bg-teal-50 font-semibold text-teal-800" : "text-slate-600"
+    } hover:bg-teal-50`;
+
+  const toggleGroup = (label) => {
+    const next = new Set(expandedGroups);
+    if (next.has(label)) next.delete(label);
+    else next.add(label);
+    setGroupExpansion({ pathname: location.pathname, groups: next });
+  };
 
   return (
     <>
@@ -132,7 +181,108 @@ const Sidebar = () => {
           </Link>
 
           {user?.role === "HR" &&
-            HR_NAV_ITEMS.map(([path, Icon, label]) => (
+            HR_NAV_ITEMS.map(([path, Icon, label]) => path === "/recruitment" ? (
+              <div key={path} className="space-y-1">
+                <button
+                  type="button"
+                  aria-expanded={recruitmentExpanded}
+                  onClick={() => setRecruitmentExpansion({
+                    pathname: location.pathname,
+                    expanded: !recruitmentExpanded,
+                  })}
+                  className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${
+                    location.pathname.startsWith("/recruitment")
+                      ? "bg-teal-50 font-semibold text-teal-800"
+                      : "text-slate-700"
+                  } hover:bg-teal-50`}
+                >
+                  <Icon />
+                  <span className="flex-1">{label}</span>
+                  {recruitmentExpanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                </button>
+
+                {recruitmentExpanded && (
+                  <div className="ml-4 space-y-1 border-l border-slate-200 pl-3">
+                    {RECRUITMENT_NAVIGATION.map((item) => {
+                      const GroupIcon = item.label === "Recruitment Overview"
+                        ? LayoutDashboard
+                        : item.label === "Jobs"
+                          ? BriefcaseBusiness
+                          : item.label === "Candidates"
+                            ? IdCardLanyard
+                            : item.label === "Applications"
+                              ? ListChecks
+                              : item.label === "Interviews" || item.label === "Schedule Management"
+                                ? CalendarDays
+                                : item.label === "Conversations / Messages" || item.label === "Conversations"
+                                  ? MessageSquare
+                                  : item.label === "Hiring Alerts" || item.label === "Notifications"
+                                    ? Bell
+                                    : item.label === "Email Settings"
+                                      ? Mail
+                                      : item.label === "AI Analysis"
+                                        ? SearchCheck
+                                        : Settings;
+                      const groupExpanded = expandedGroups.has(item.label);
+                      const activeChild = item.children?.some(
+                        (child) => child.path === location.pathname,
+                      );
+                      if (item.children) {
+                        return (
+                          <div key={item.label}>
+                            <button
+                              type="button"
+                              aria-expanded={groupExpanded}
+                              onClick={() => toggleGroup(item.label)}
+                              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                                activeChild ? "font-semibold text-teal-800" : "text-slate-600"
+                              } hover:bg-teal-50`}
+                            >
+                              <GroupIcon size={16} />
+                              <span className="flex-1 text-left">{item.label}</span>
+                              {groupExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                            </button>
+                            {groupExpanded && (
+                              <div className="ml-3 space-y-1 border-l border-slate-200 pl-2">
+                                {item.children.map((child) => (
+                                  <NavLink
+                                    key={child.path}
+                                    to={child.path}
+                                    onClick={closeSidebar}
+                                    className={recruitmentLinkClassName}
+                                  >
+                                    {child.page === "resume-upload" ? <Upload size={15} /> :
+                                      child.page === "ai-results" ? <ListChecks size={15} /> :
+                                        child.page === "chats" ? <MessageSquare size={15} /> :
+                                          child.page === "bulk-send" ? <Send size={15} /> :
+                                            child.page === "send-history" ? <Mail size={15} /> :
+                                              child.page === "mail-inbox" ? <Inbox size={15} /> :
+                                                child.page === "schedule-interview" ? <CalendarDays size={15} /> :
+                                                  <ListChecks size={15} />}
+                                    {child.label}
+                                  </NavLink>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <NavLink
+                          key={item.path}
+                          to={item.path}
+                          onClick={closeSidebar}
+                          className={recruitmentLinkClassName}
+                        >
+                          <GroupIcon size={16} />
+                          {item.label}
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
               <Link
                 key={path}
                 to={path}

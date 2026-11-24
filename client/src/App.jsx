@@ -16,6 +16,9 @@ import Performance from "./Pages/Performance";
 import Templates from "./Pages/Templates";
 import ExpenseTracker from "./Pages/ExpenseTracker";
 import Profile from "./Pages/Profile";
+import Recruitment from "./Pages/Recruitment";
+import Notifications from "./Pages/Notifications";
+import Settings from "./Pages/Settings";
 
 import { ToastContainer } from "react-toastify";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -39,6 +42,8 @@ function App() {
           <Route element={<ProtectedRoute roles={HR_ROLES} />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/settings" element={<Settings />} />
 
             <Route path="/employees" element={<Employees />} />
             <Route path="/employees/:id" element={<EmployeeDetails />} />
@@ -53,6 +58,15 @@ function App() {
             <Route path="/payslip" element={<Payslip />} />
             <Route path="/templates" element={<Templates />} />
             <Route path="/expenses" element={<ExpenseTracker />} />
+            <Route
+              path="/recruitment"
+              element={<Navigate to="/recruitment/overview" replace />}
+            />
+            <Route
+              path="/recruitment/settings"
+              element={<Navigate to="/settings#recruitment" replace />}
+            />
+            <Route path="/recruitment/*" element={<Recruitment />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -13,34 +13,46 @@ const endSession = async (reason) => {
   }
 };
 
-// Firebase ID tokens always expire after 1 hour. Instead of reusing the token saved at
-// login, attach a fresh one to every API call; Firebase renews it automatically.
-axios.interceptors.request.use(async (config) => {
-  if (!isApiRequest(config) || !getUser()) return config;
+// Firebase ID tokens expire after 1 hour. Apply this interceptor to each Axios instance
+// that calls the HRMS API, including instances created with axios.create().
+export const configureApiAuth = (client) => {
+  client.interceptors.request.use(async (config) => {
+    if (!isApiRequest(config)) return config;
 
-  if (isSessionExpired()) {
-    await endSession("expired");
-    return Promise.reject(new axios.Cancel("Session expired"));
-  }
+    // Check if user is logged in (either from Firebase or localStorage)
+    const user = getUser();
+    const token = localStorage.getItem("token");
+    
+    // If neither Firebase user nor stored token, skip auth
+    if (!user && !token) return config;
 
-  await firebaseAuth.authStateReady();
-  const firebaseUser = firebaseAuth.currentUser;
-  // Fall back to the token saved at login if Firebase could not restore its session
-  // (e.g. blocked site storage); the server's 401 then ends the session cleanly.
-  const token = firebaseUser
-    ? await firebaseUser.getIdToken()
-    : localStorage.getItem("token");
-  if (firebaseUser) localStorage.setItem("token", token);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
-
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401 && isApiRequest(error.config) && getUser()) {
-      await endSession("signed-out");
+    // If session has expired, end it
+    if (user && isSessionExpired()) {
+      await endSession("expired");
+      return Promise.reject(new axios.Cancel("Session expired"));
     }
-    return Promise.reject(error);
-  },
-);
+
+    // Try to get a valid token from Firebase or localStorage
+    await firebaseAuth.authStateReady();
+    const firebaseUser = firebaseAuth.currentUser;
+    let authToken = firebaseUser
+      ? await firebaseUser.getIdToken()
+      : token || localStorage.getItem("token");
+    
+    if (firebaseUser && authToken) localStorage.setItem("token", authToken);
+    if (authToken) config.headers.Authorization = `Bearer ${authToken}`;
+    return config;
+  });
+
+  client.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+      if (error.response?.status === 401 && isApiRequest(error.config) && getUser()) {
+        await endSession("signed-out");
+      }
+      return Promise.reject(error);
+    },
+  );
+};
+
+configureApiAuth(axios);

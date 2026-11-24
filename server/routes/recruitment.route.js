@@ -9,7 +9,15 @@ import { sendRecruitmentMail, testSmtpConnection } from "../services/mailService
 import {
   extractRecruitmentTestMetadata,
   getRecruitmentStatus,
+  normalizeRecruitmentCollection,
 } from "../services/recruitmentService.js";
+import {
+  checkGenericSettingsWrite,
+  redactJsonResponses,
+  redactSecrets,
+  resolveMailTestConfig,
+  scrubSecrets,
+} from "../utils/mailSecurity.js";
 import { recruitmentFirestore } from "../services/recruitmentFirebaseService.js";
 import {
   buildRecruitmentScreeningMessages,
@@ -23,6 +31,8 @@ import {
   getSavedEmailConfig,
   saveEmailConfig,
   getRecruitmentMailConfig,
+  getRecruitmentSmtpConfig,
+  isRecruitmentSmtpConfigured,
 } from "../services/recruitmentEmailService.js";
 import {
   analyzeResumeWithJobMatching,
@@ -38,12 +48,58 @@ import {
 
 const router = express.Router();
 router.use(authenticate);
+// Mailbox passwords and other secret-named fields are stripped from every JSON response.
+router.use(redactJsonResponses);
+
+// Saved mailbox credentials, used to scrub them from any error text sent to the client.
+const savedMailCredentials = () => {
+  const imap = getRecruitmentMailConfig();
+  const smtp = getRecruitmentSmtpConfig();
+  return [
+    { user: imap.user, password: imap.password },
+    { user: smtp.user, password: smtp.password },
+  ];
+};
+
+const mailFailure = (res, error, fallbackMessage, extraCredentials = []) => {
+  if (error.code === "MAIL_CREDENTIALS_REQUIRED") {
+    return res.status(400).json({ success: false, code: error.code, message: error.message });
+  }
+  const message = scrubSecrets(error.message || fallbackMessage, [
+    ...savedMailCredentials(),
+    ...extraCredentials,
+  ]);
+  return res.status(502).json({ success: false, message });
+};
+
+// Mail settings records may only change through /email/settings; see checkGenericSettingsWrite.
+const assertGenericWriteAllowed = async (table, { id = null, payload = null } = {}) => {
+  const collectionName = normalizeRecruitmentCollection(table);
+  if (collectionName !== "recruitmentSettings") return;
+  const existing = id ? await recruitmentFirestore.get(collectionName, id) : null;
+  const refusal = checkGenericSettingsWrite({ collectionName, existing, payload });
+  if (refusal) throw refusal;
+};
 
 const configRequired = (res, message) =>
   res.status(503).json({ success: false, code: "CONFIG_REQUIRED", message });
 
 const handleError = (res, error) => {
   if (error.code === "CONFIG_REQUIRED") return configRequired(res, error.message);
+  if (error.code === "PROTECTED_SETTING") {
+    return res.status(403).json({ success: false, code: error.code, message: error.message });
+  }
+  if (error.code === "MAIL_CREDENTIALS_REQUIRED") {
+    return res.status(400).json({ success: false, code: error.code, message: error.message });
+  }
+  // Encryption key missing/malformed: a server configuration problem, nothing was stored.
+  if (error.code === "CREDENTIALS_KEY_REQUIRED" || error.code === "CREDENTIALS_KEY_INVALID" ||
+      error.code === "CREDENTIALS_KEY_STALE" || error.code === "CREDENTIALS_VERIFY_FAILED") {
+    return res.status(503).json({ success: false, code: error.code, message: error.message });
+  }
+  if (error.code === "CREDENTIALS_UNREADABLE") {
+    return res.status(409).json({ success: false, code: error.code, message: error.message });
+  }
   if (error.code === "DUPLICATE_RECORD") {
     return res.status(409).json({ success: false, code: error.code, message: error.message });
   }
@@ -89,7 +145,11 @@ const finishSendRecord = async ({ sendId, recipientId, status, error }) => {
   ]);
 };
 
-router.get("/status", (req, res) => res.json({ success: true, data: getRecruitmentStatus() }));
+// `email` reflects the saved (decrypted) recruitment SMTP settings, not only SMTP_* env vars.
+router.get("/status", (req, res) => res.json({
+  success: true,
+  data: { ...getRecruitmentStatus(), email: isRecruitmentSmtpConfigured() },
+}));
 router.get("/data/:table", async (req, res) => {
   try {
     res.json({ success: true, data: await recruitmentFirestore.list(req.params.table, req.query) });
@@ -97,15 +157,24 @@ router.get("/data/:table", async (req, res) => {
   catch (error) { handleError(res, error); }
 });
 router.post("/data/:table", async (req, res) => {
-  try { res.status(201).json({ success: true, data: await recruitmentFirestore.create(req.params.table, req.body) }); }
+  try {
+    await assertGenericWriteAllowed(req.params.table, { payload: req.body });
+    res.status(201).json({ success: true, data: await recruitmentFirestore.create(req.params.table, req.body) });
+  }
   catch (error) { handleError(res, error); }
 });
 router.patch("/data/:table/:id", async (req, res) => {
-  try { res.json({ success: true, data: await recruitmentFirestore.update(req.params.table, req.params.id, req.body) }); }
+  try {
+    await assertGenericWriteAllowed(req.params.table, { id: req.params.id, payload: req.body });
+    res.json({ success: true, data: await recruitmentFirestore.update(req.params.table, req.params.id, req.body) });
+  }
   catch (error) { handleError(res, error); }
 });
 router.delete("/data/:table/:id", async (req, res) => {
-  try { res.json({ success: true, data: await recruitmentFirestore.remove(req.params.table, req.params.id) }); }
+  try {
+    await assertGenericWriteAllowed(req.params.table, { id: req.params.id });
+    res.json({ success: true, data: await recruitmentFirestore.remove(req.params.table, req.params.id) });
+  }
   catch (error) { handleError(res, error); }
 });
 router.post("/upload", async (req, res) => {
@@ -193,7 +262,8 @@ router.post("/messages/email", emailRateLimit, async (req, res) => {
     });
     return res.json({ success: true, data: { delivered: false, dryRun: true, sendId: send.id } });
   }
-  if (!getRecruitmentStatus().email) return configRequired(res, "SMTP email delivery is not configured");
+  if (!isRecruitmentSmtpConfigured()) return configRequired(res, "SMTP email delivery is not configured");
+  const smtp = getRecruitmentSmtpConfig();
   let sendRecord;
   try {
     sendRecord = await startSendRecord({
@@ -203,11 +273,13 @@ router.post("/messages/email", emailRateLimit, async (req, res) => {
       message: req.body.text || req.body.message || "",
       uid: req.user.uid,
     });
-    await sendRecruitmentMail({ to: req.body.to, subject: req.body.subject, text: req.body.text || req.body.message || "" });
+    await sendRecruitmentMail({ to: req.body.to, subject: req.body.subject, text: req.body.text || req.body.message || "", smtp });
     await finishSendRecord({ ...sendRecord, status: "Delivered" });
     res.json({ success: true, data: { delivered: true } });
   } catch (error) {
     if (sendRecord) {
+      // sendRecruitmentMail already scrubbed the message; scrub again against all saved credentials.
+      console.error(`Recruitment email delivery failed (send ${sendRecord.sendId}): ${scrubSecrets(error.message, savedMailCredentials())}`);
       await finishSendRecord({ ...sendRecord, status: "Failed", error: "Email provider delivery failed" });
       return res.status(502).json({ success: false, message: "Email provider delivery failed" });
     }
@@ -274,7 +346,8 @@ router.get("/data/:table/stream", async (req, res) => {
   const sendSnapshot = async () => {
     try {
       const data = await recruitmentFirestore.list(req.params.table, { ...req.query, limit: 500 });
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Streams bypass res.json(), so redact explicitly.
+      res.write(`data: ${JSON.stringify(redactSecrets(data))}\n\n`);
     } catch (error) {
       console.error("Recruitment realtime update failed:", error.message);
       res.write(`event: error\ndata: ${JSON.stringify({ message: "Realtime recruitment data is unavailable" })}\n\n`);
@@ -303,6 +376,19 @@ router.get("/email/status", async (req, res) => {
   } catch (error) { handleError(res, error); }
 });
 
+router.get("/email/list", async (req, res) => {
+  try {
+    const emails = await recruitmentFirestore.list("recruitmentEmailReplies", {
+      limit: 100,
+      orderBy: "receivedAt",
+      direction: "desc",
+    });
+    res.json({ success: true, emails });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 router.get("/email/settings", async (req, res) => {
   try {
     const settings = await getSavedEmailConfig();
@@ -317,71 +403,46 @@ router.post("/email/settings", async (req, res) => {
   } catch (error) { handleError(res, error); }
 });
 
+// Connection tests: the saved password is used only for the saved host and user
+// (resolveMailTestConfig). A different server needs its own password in the request.
+const requestedMailConfig = (body, section) => {
+  const requested = body?.[section] || body || {};
+  return requested && typeof requested === "object" ? requested : {};
+};
+
 router.post("/email/test", async (req, res) => {
+  const requested = requestedMailConfig(req.body, "imap");
   try {
-    const result = await testMailboxConnection(req.body?.imap || req.body);
+    const result = await testMailboxConnection(requested);
     res.json({ success: true, data: result });
   } catch (error) {
-    res.status(502).json({ 
-      success: false, 
-      message: error.message || "Mailbox connection test failed" 
-    });
+    mailFailure(res, error, "Mailbox connection test failed", [requested]);
   }
 });
 
 router.post("/email/test-imap", async (req, res) => {
+  const requested = requestedMailConfig(req.body, "imap");
   try {
-    // Get saved config to retrieve encrypted password if frontend didn't provide one
-    const savedConfig = await getSavedEmailConfig();
-    const imapConfig = req.body?.imap || req.body;
-    const mailConfig = getRecruitmentMailConfig();
-    
-    console.log("[Test IMAP] Frontend config:", { host: imapConfig.host, user: imapConfig.user, hasPassword: !!imapConfig.password });
-    console.log("[Test IMAP] Saved mail config password exists:", !!mailConfig.password);
-    
-    // Merge with saved config: use frontend values, but fall back to saved password if empty
-    const mergedConfig = {
-      host: imapConfig.host || "",
-      port: Number(imapConfig.port || 993),
-      secure: imapConfig.secure !== undefined ? Boolean(imapConfig.secure) : true,
-      user: imapConfig.user || "",
-      password: imapConfig.password || mailConfig.password || "",
-    };
-    
-    console.log("[Test IMAP] Merged config:", { host: mergedConfig.host, user: mergedConfig.user, hasPassword: !!mergedConfig.password });
-    
-    const result = await testMailboxConnection(mergedConfig);
+    const result = await testMailboxConnection(requested);
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("[Test IMAP Error]", error.message);
-    res.status(502).json({ 
-      success: false, 
-      message: error.message || "IMAP connection test failed" 
-    });
+    mailFailure(res, error, "IMAP connection test failed", [requested]);
   }
 });
 
 router.post("/email/test-smtp", async (req, res) => {
+  const requested = requestedMailConfig(req.body, "smtp");
   try {
-    // Get saved config to retrieve encrypted password if frontend didn't provide one
-    const smtpConfig = req.body?.smtp || req.body;
-    
-    // Merge with saved config: use frontend values, but fall back to saved password if empty
-    const mergedConfig = {
-      host: smtpConfig.host || "",
-      port: Number(smtpConfig.port || 465),
-      secure: smtpConfig.secure !== undefined ? Boolean(smtpConfig.secure) : true,
-      user: smtpConfig.user || "",
-      password: smtpConfig.password || getRecruitmentMailConfig().password || "",
-    };
-    
-    const result = await testSmtpConnection(mergedConfig);
+    const config = resolveMailTestConfig({
+      requested,
+      saved: getRecruitmentSmtpConfig(),
+      defaultPort: 465,
+      label: "SMTP",
+    });
+    const result = await testSmtpConnection(config);
     res.json({ success: true, data: result });
   } catch (error) {
-    res.status(502).json({
-      success: false,
-      message: error.message || "SMTP connection test failed"
-    });
+    mailFailure(res, error, "SMTP connection test failed", [requested]);
   }
 });
 
@@ -393,10 +454,7 @@ router.post("/email/sync", async (req, res) => {
     const result = await pollRecruitmentEmails();
     res.json({ success: true, data: result });
   } catch (error) {
-    res.status(502).json({ 
-      success: false, 
-      message: error.message || "Email synchronization failed" 
-    });
+    mailFailure(res, error, "Email synchronization failed");
   }
 });
 

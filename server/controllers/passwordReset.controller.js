@@ -1,6 +1,6 @@
 import { firebaseAuth, firestore } from "../config/firebase.js";
 import { allowedOrigins } from "../config/origins.js";
-import { isMailConfigured, sendPasswordResetMail } from "../services/mailService.js";
+import { isMailConfigured, scrubSmtpError, sendPasswordResetMail } from "../services/mailService.js";
 import { isActiveHrRecord } from "../utils/employeeDirectory.js";
 
 // Firebase won't let this project point its reset emails at our own page, so the server
@@ -63,7 +63,8 @@ export const requestPasswordReset = async (req, res) => {
     await sendPasswordResetMail({ to: email, name: user.displayName, link });
     return done();
   } catch (error) {
-    console.error("Password reset email failed:", error.message);
+    // SMTP errors can quote the server's reply; never log credentials or the reset link.
+    console.error("Password reset email failed:", scrubSmtpError(error.message));
     return res.status(500).json({ success: false, message: "We couldn't send the email. Please try again later." });
   }
 };

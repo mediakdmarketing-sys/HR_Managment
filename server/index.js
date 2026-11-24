@@ -13,8 +13,14 @@ import payrollRoute from "./routes/payroll.route.js";
 import payslipShareRoute from "./routes/payslipShare.route.js";
 import attendanceRoute from "./routes/attendance.route.js";
 import aiRoute from "./routes/ai.route.js";
+import recruitmentRoute from "./routes/recruitment.route.js";
+import workReportRoute from "./routes/workReport.route.js";
+import identityDocRoute from "./routes/identityDoc.route.js";
 import { initializeFirebaseData } from "./database/init.js";
 import { allowedOrigins } from "./config/origins.js";
+import { startEmailPolling, stopEmailPolling, initializeEmailPolling } from "./services/recruitmentEmailService.js";
+import { processPendingAIAnalysis } from "./services/recruitmentAIService.js";
+import { startServer } from "./utils/startServer.js";
 
 
 const app = express();
@@ -43,19 +49,58 @@ app.use("/api/payroll", payrollRoute);
 app.use("/api/payslips", payslipShareRoute);
 app.use("/api/attendance", attendanceRoute);
 app.use("/api/ai", aiRoute);
+app.use("/api/recruitment", recruitmentRoute);
+app.use("/api/work-reports", workReportRoute);
+// Identity docs nested under users
+app.use("/api/users/:id/identity", identityDocRoute);
 
 
+
+const startBackgroundJobs = async () => {
+  // Initialize and start recruitment email polling (async)
+  await initializeEmailPolling();
+
+  // Start AI analysis processor (runs every 5 minutes)
+  if (process.env.NODE_ENV !== "test" && process.env.GROQ_API_KEY) {
+    setInterval(async () => {
+      try {
+        await processPendingAIAnalysis();
+      } catch (error) {
+        console.error("AI analysis processor error:", error.message);
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Initial run
+    setTimeout(async () => {
+      try {
+        await processPendingAIAnalysis();
+      } catch (error) {
+        console.error("Initial AI analysis processor error:", error.message);
+      }
+    }, 10000); // 10 seconds after startup
+  }
+};
 
 const initializeDatabase = async () => {
   try {
     await initializeFirebaseData();
     console.log("Firebase initialized successfully!");
 
-    if (!process.env.FUNCTIONS_WORKER_RUNTIME && !process.env.K_SERVICE) {
-      app.listen(Number(process.env.PORT) || 5000, () => {
-        console.log(`Server running on port ${Number(process.env.PORT) || 5000}`);
-      });
+    if (process.env.FUNCTIONS_WORKER_RUNTIME || process.env.K_SERVICE) {
+      // Serverless hosts own the HTTP listener.
+      await startBackgroundJobs();
+      return;
     }
+
+    // Background jobs (mailbox polling) start only after the port is bound; if the port is
+    // taken by another instance this process exits instead of polling (see startServer).
+    const server = await startServer({
+      app,
+      port: Number(process.env.PORT) || 5000,
+      startBackgroundJobs,
+    });
+    // Prevent headless Windows background subshell from exiting on stdin EOF
+    if (server) setInterval(() => {}, 60000);
   } catch (error) {
     console.error("Database initialization failed:", error);
     if (process.env.FUNCTIONS_WORKER_RUNTIME || process.env.K_SERVICE) {
@@ -68,5 +113,18 @@ const initializeDatabase = async () => {
 export { app, initializeDatabase };
 
 if (!process.env.FUNCTIONS_WORKER_RUNTIME && !process.env.K_SERVICE) {
-  initializeDatabase();
+  await initializeDatabase();
 }
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM received, shutting down gracefully...");
+  stopEmailPolling();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT received, shutting down gracefully...");
+  stopEmailPolling();
+  process.exit(0);
+});

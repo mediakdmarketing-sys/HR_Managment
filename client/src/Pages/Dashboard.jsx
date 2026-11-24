@@ -15,6 +15,7 @@ import {
   UserMinus,
   UserPlus,
   Users,
+  BriefcaseBusiness,
 } from "lucide-react";
 import {
   Bar,
@@ -31,6 +32,7 @@ import { getUser } from "../utils/auth";
 
 import { getUsers } from "../api/userApi";
 import { getLeaveRequests } from "../api/leaveApi";
+import { getRecruitmentRows, getRecruitmentStatus } from "../api/recruitmentApi";
 
 const NEW_JOINER_DAYS = 14;
 
@@ -288,11 +290,46 @@ const DepartmentChart = ({ employees }) => {
 
 const HrDashboard = ({ user }) => {
   const [loadedAt] = useState(() => Date.now());
+  const [recruitmentOverview, setRecruitmentOverview] = useState({
+    loading: true,
+    unavailable: false,
+    data: null,
+  });
   const {
     data: [usersData, leaveData],
     isLoading,
     loadError,
   } = useDashboardData(() => [getUsers(1, "all", 1000), getLeaveRequests()], []);
+  useEffect(() => {
+    let active = true;
+    const loadRecruitmentOverview = async () => {
+      try {
+        const status = await getRecruitmentStatus();
+        if (!status.data.data.firebase) throw new Error("Recruitment Firebase is unavailable");
+        const collections = [
+          ["jobs", "recruitmentJobs"],
+          ["candidates", "recruitmentCandidates"],
+          ["applications", "recruitmentApplications"],
+          ["interviews", "recruitmentInterviews"],
+        ];
+        const results = await Promise.all(collections.map(async ([key, collection]) => {
+          const response = await getRecruitmentRows(collection, 1000);
+          return [key, response.data.data || []];
+        }));
+        if (active) {
+          setRecruitmentOverview({
+            loading: false,
+            unavailable: false,
+            data: Object.fromEntries(results),
+          });
+        }
+      } catch {
+        if (active) setRecruitmentOverview({ loading: false, unavailable: true, data: null });
+      }
+    };
+    void loadRecruitmentOverview();
+    return () => { active = false; };
+  }, []);
   const employees = usersData?.users || [];
   const leaveRequests = leaveData || [];
 
@@ -317,6 +354,15 @@ const HrDashboard = ({ user }) => {
   const reviewable = leaveRequests.filter((request) => request.employeeId !== currentEmployeeId);
   const pendingLeave = reviewable.filter((request) => request.status === "Pending").length;
   const show = (value) => (isLoading ? "…" : value);
+  const recruitment = recruitmentOverview.data;
+  const openJobs = recruitment?.jobs.filter((job) => job.status === "Open").length || 0;
+  const activeApplications = recruitment?.applications.filter(
+    (application) => !["Hired", "Rejected", "Withdrawn"].includes(application.status),
+  ).length || 0;
+  const upcomingInterviews = recruitment?.interviews.filter((interview) =>
+    interview.status !== "Cancelled" &&
+    new Date(interview.scheduledAt || interview.interview_date || interview.scheduled_at).getTime() >= loadedAt,
+  ).length || 0;
 
   return (
     <>
@@ -362,6 +408,38 @@ const HrDashboard = ({ user }) => {
           isLoading={isLoading}
         />
       </div>
+
+      <Panel
+        title="Recruitment overview"
+        description="Counts from Firebase recruitment records returned by the service (up to 1,000 per collection)."
+        icon={BriefcaseBusiness}
+        action={<PanelLink to="/recruitment/jobs">Open Recruitment</PanelLink>}
+      >
+        {recruitmentOverview.loading ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-20 w-full" />)}
+          </div>
+        ) : recruitmentOverview.unavailable ? (
+          <p role="status" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
+            Recruitment metrics are unavailable until the authenticated Firebase recruitment service is configured.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["Open jobs", openJobs, "Currently accepting applications", "/recruitment/jobs"],
+              ["Candidates", recruitment.candidates.length, "Recruitment candidate records", "/recruitment/candidates"],
+              ["Active applications", activeApplications, "Not hired, rejected or withdrawn", "/recruitment/candidates"],
+              ["Upcoming interviews", upcomingInterviews, "Scheduled from now onward", "/recruitment/schedule-manage/all-interviews"],
+            ].map(([label, value, detail, to]) => (
+              <Link key={label} to={to} className="rounded-xl border border-slate-200 p-4 transition hover:border-teal-300">
+                <p className="text-sm font-medium text-slate-500">{label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-800">{value}</p>
+                <p className="mt-1 text-xs text-slate-500">{detail}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Panel>
 
       <div className="grid gap-6 xl:grid-cols-3">
         <Panel
@@ -454,6 +532,7 @@ const HrDashboard = ({ user }) => {
 
       <Panel title="Quick links" description="Jump straight to common HR tasks." icon={Sparkles}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <QuickLink label="Recruitment management" to="/recruitment" icon={BriefcaseBusiness} />
           <QuickLink label="Employee records" to="/employees" icon={IdCardLanyard} />
           <QuickLink label="Leave management" to="/leave" icon={CalendarDays} />
           <QuickLink label="Attendance" to="/attendance" icon={Clock3} />

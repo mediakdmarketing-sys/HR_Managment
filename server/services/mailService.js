@@ -1,4 +1,9 @@
 import nodemailer from "nodemailer";
+import { resolveMailTestConfig, scrubSecrets, smtpTlsOptions } from "../utils/mailSecurity.js";
+
+// Removes the environment SMTP credentials from error text before it is logged.
+export const scrubSmtpError = (message) =>
+  scrubSecrets(message, [{ user: process.env.SMTP_USER, password: process.env.SMTP_PASS }]);
 
 // SMTP settings, e.g. Gmail: SMTP_HOST=smtp.gmail.com, SMTP_PORT=465, SMTP_USER=you@gmail.com,
 // SMTP_PASS=<16-character app password>.
@@ -8,12 +13,14 @@ const FROM_NAME = process.env.MAIL_FROM_NAME || "KD Marketing Group HR";
 export const isMailConfigured = () => Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 
 let transporter;
+// TLS is mandatory for sending too: direct TLS on 465, otherwise STARTTLS is required
+// rather than opportunistic, so credentials are never sent over a plaintext connection.
 const getTransporter = () => {
   const port = Number(SMTP_PORT) || 465;
   transporter ||= nodemailer.createTransport({
     host: SMTP_HOST,
     port,
-    secure: port === 465,
+    ...smtpTlsOptions({ secure: port === 465 }),
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
   return transporter;
@@ -40,3 +47,93 @@ export const sendPasswordResetMail = ({ to, name, link }) =>
   <p style="text-align:center;font-size:12px;color:#94a3b8;margin-top:16px">${escapeHtml(FROM_NAME)}</p>
 </div>`,
   });
+
+// Sends recruitment mail through the given SMTP account (normally the saved recruitment
+// mailbox from getRecruitmentSmtpConfig). TLS is mandatory and certificates are verified;
+// protocol logging stays off and any error is scrubbed of the credentials before it is
+// rethrown. The From address is the authenticated mailbox, as most providers require.
+export const sendRecruitmentMail = async ({ to, subject, text, smtp }) => {
+  if (!smtp?.host || !smtp?.user || !smtp?.password) {
+    throw Object.assign(new Error("SMTP email delivery is not configured"), { code: "CONFIG_REQUIRED" });
+  }
+  const credentials = [{ user: smtp.user, password: smtp.password }];
+  const mailTransport = nodemailer.createTransport({
+    host: smtp.host,
+    port: Number(smtp.port) || 465,
+    ...smtpTlsOptions({ secure: smtp.secure }),
+    auth: { user: smtp.user, pass: smtp.password },
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
+    logger: false,
+    debug: false,
+  });
+  try {
+    const info = await mailTransport.sendMail({
+      from: `"${FROM_NAME}" <${smtp.user}>`,
+      to,
+      subject,
+      text,
+    });
+    return { messageId: info?.messageId || null };
+  } catch (error) {
+    const detail = scrubSecrets(error?.message || "delivery failed", credentials);
+    throw Object.assign(new Error(`SMTP delivery failed: ${detail}`), { code: error?.code || "SMTP_DELIVERY_FAILED" });
+  } finally {
+    mailTransport.close?.();
+  }
+};
+
+// Verifies SMTP login. Callers pass a configuration already resolved with
+// resolveMailTestConfig; the environment password is likewise only used for the
+// environment's own SMTP host and user. Protocol logging stays off (nodemailer's
+// logger/debug output includes the AUTH exchange) and errors are scrubbed of credentials.
+export const testSmtpConnection = async (customConfig = {}) => {
+  const { host, port, secure, user, password } = resolveMailTestConfig({
+    requested: customConfig,
+    saved: {
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: Number(SMTP_PORT || 465) === 465,
+      user: SMTP_USER,
+      password: SMTP_PASS,
+    },
+    defaultPort: 465,
+    label: "SMTP",
+  });
+  const credentials = [{ user, password }];
+
+  console.log(`[SMTP Test] Testing connection to ${host}:${port} (secure=${secure})`);
+
+  const testTransporter = nodemailer.createTransport({
+    host,
+    port,
+    ...smtpTlsOptions({ secure }),
+    auth: { user, pass: password },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+    logger: false,
+    debug: false,
+  });
+
+  try {
+    await testTransporter.verify();
+    console.log(`[SMTP Test] Verified SMTP connection to ${host}:${port}`);
+
+    return {
+      success: true,
+      host,
+      port,
+      user,
+      secure,
+      message: `SMTP connection to ${host}:${port} verified successfully`,
+    };
+  } catch (error) {
+    const detail = scrubSecrets(error.message || error.code || "Connection timeout", credentials);
+    console.error(`[SMTP Test Error] ${host}:${port} code=${error.code || "unknown"} ${detail}`);
+    throw new Error(`SMTP connection test failed (${host}:${port}): ${detail}`);
+  } finally {
+    testTransporter.close();
+  }
+};
