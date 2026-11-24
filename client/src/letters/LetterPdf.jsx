@@ -16,8 +16,6 @@ Font.registerHyphenationCallback((word) => [word]);
 const COLORS = {
   ink: "#111827",
   muted: "#374151",
-  brand: "#3b7a2f",
-  brandLight: "#7cb342",
 };
 
 // Density levels: renderLetterPdf steps up a level when a letter would run past its page
@@ -29,22 +27,31 @@ const DENSITY = [
 ];
 export const MAX_DENSITY = DENSITY.length - 1;
 
-const buildStyles = (level) => {
+const buildStyles = (level, appearance = {}) => {
   const d = DENSITY[level];
+  const brand = appearance.themeColor || "#3b7a2f";
+  const preset = appearance.preset || "classic";
   return StyleSheet.create({
     page: {
-      paddingTop: 30,
+      paddingTop: preset === "minimal" ? 24 : preset === "modern" ? 36 : 30,
       paddingBottom: 54,
-      paddingHorizontal: 44,
+      paddingHorizontal: preset === "minimal" ? 52 : preset === "modern" ? 40 : 44,
       fontFamily: "Helvetica",
       fontSize: d.fontSize,
       lineHeight: d.lineHeight,
       color: COLORS.ink,
     },
-    header: { flexDirection: "row", alignItems: "center", marginBottom: d.header },
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginBottom: preset === "modern" ? d.header + 4 : d.header,
+      paddingBottom: appearance.headerStyle === "plain" ? 0 : 7,
+      borderBottomWidth: appearance.headerStyle === "plain" ? 0 : appearance.headerStyle === "accent" ? 3 : 1,
+      borderBottomColor: brand,
+    },
     logo: { width: Math.round(d.logo * 1.28), height: d.logo, objectFit: "contain", marginRight: 14 },
-    companyName: { fontFamily: "Helvetica-Bold", fontSize: 17, color: COLORS.brand, lineHeight: 1.2 },
-    companyLine: { fontFamily: "Helvetica-Bold", fontSize: 10.5, color: COLORS.brandLight, lineHeight: 1.3 },
+    companyName: { fontFamily: "Helvetica-Bold", fontSize: preset === "modern" ? 19 : 17, color: brand, lineHeight: 1.2 },
+    companyLine: { fontFamily: "Helvetica-Bold", fontSize: 10.5, color: brand, lineHeight: 1.3 },
     bold: { fontFamily: "Helvetica-Bold" },
     block: { marginBottom: d.block },
     line: { fontFamily: "Helvetica-Bold" },
@@ -83,6 +90,9 @@ const buildStyles = (level) => {
       justifyContent: "space-between",
       fontFamily: "Helvetica-Bold",
       fontSize: 10,
+      paddingTop: appearance.footerStyle === "rule" ? 6 : 0,
+      borderTopWidth: appearance.footerStyle === "rule" ? 1 : 0,
+      borderTopColor: brand,
     },
     footerBlank: { width: 160, borderBottomWidth: 1, borderBottomColor: COLORS.ink, marginLeft: 4 },
     footerItem: { flexDirection: "row", alignItems: "flex-end" },
@@ -90,8 +100,7 @@ const buildStyles = (level) => {
   });
 };
 
-const STYLES = DENSITY.map((_, level) => buildStyles(level));
-const StylesContext = createContext(STYLES[0]);
+const StylesContext = createContext(buildStyles(0));
 const useStyles = () => useContext(StylesContext);
 
 const imageSource = (image) => (image ? `data:${image.mime};base64,${image.data}` : null);
@@ -415,18 +424,24 @@ const ServiceLetterBody = ({ letter, company, logo, signature, onPageCount }) =>
   );
 };
 
-export const OfferLetterDocument = ({ density = 0, ...props }) => (
-  <Document title={`${props.letter.fullName} - Offer Letter`} author={props.company.legalName || props.company.name}>
-    <StylesContext.Provider value={STYLES[density]}>
-      <OfferLetterBody {...props} />
-    </StylesContext.Provider>
-  </Document>
-);
+export const OfferLetterDocument = ({ density = 0, ...props }) => {
+  const styles = buildStyles(density, props.appearance);
+  return (
+    <Document title={`${props.letter.fullName} - Offer Letter`} author={props.company.legalName || props.company.name}>
+      <StylesContext.Provider value={styles}>
+        <OfferLetterBody {...props} />
+      </StylesContext.Provider>
+    </Document>
+  );
+};
 
-export const ServiceLetterDocument = ({ density = 0, ...props }) => (
-  <Document title={`${props.letter.fullName} - Service Letter`} author={props.company.legalName || props.company.name}>
-    <StylesContext.Provider value={STYLES[density]}>
-      <ServiceLetterBody {...props} />
-    </StylesContext.Provider>
-  </Document>
-);
+export const ServiceLetterDocument = ({ density = 0, ...props }) => {
+  const styles = buildStyles(density, props.appearance);
+  return (
+    <Document title={`${props.letter.fullName} - Service Letter`} author={props.company.legalName || props.company.name}>
+      <StylesContext.Provider value={styles}>
+        <ServiceLetterBody {...props} />
+      </StylesContext.Provider>
+    </Document>
+  );
+};

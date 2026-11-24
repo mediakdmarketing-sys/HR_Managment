@@ -5,6 +5,7 @@ import {
   FileSignature,
   ImagePlus,
   Loader2,
+  Palette,
   PenLine,
   RefreshCw,
   Search,
@@ -21,6 +22,7 @@ import {
   getLetterSettings,
   removeTemplateSignature,
   saveCompanyDetails,
+  saveDocumentAppearance,
   saveTemplateLogo,
   saveTemplateSignature,
 } from "../api/templateApi";
@@ -32,7 +34,18 @@ const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-normal text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
 
 // Used when the letter settings cannot be loaded, so letters can still be created.
-const DEFAULT_SETTINGS = { logo: null, signature: null, company: DEFAULT_COMPANY };
+const DEFAULT_APPEARANCE = {
+  themeColor: "#3b7a2f",
+  preset: "classic",
+  headerStyle: "rule",
+  footerStyle: "rule",
+};
+const DEFAULT_SETTINGS = {
+  logo: null,
+  signature: null,
+  company: DEFAULT_COMPANY,
+  appearance: DEFAULT_APPEARANCE,
+};
 
 const companyFields = [
   ["name", "Letterhead name", "KD Associates INC (Buffalo)"],
@@ -129,6 +142,7 @@ function Templates() {
   const [settingsError, setSettingsError] = useState("");
   const [busyImage, setBusyImage] = useState("");
   const [isSavingCompany, setIsSavingCompany] = useState(false);
+  const [isSavingAppearance, setIsSavingAppearance] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [options, setOptions] = useState({ departments: [], roles: [] });
   const [isLoading, setIsLoading] = useState(true);
@@ -252,6 +266,21 @@ function Templates() {
     }
   };
 
+  const saveAppearance = async (event) => {
+    event.preventDefault();
+    if (isSavingAppearance) return;
+    setIsSavingAppearance(true);
+    try {
+      const response = await saveDocumentAppearance(settings.appearance);
+      setSettings((current) => ({ ...current, appearance: response.data.data }));
+      toast.success("Document appearance saved", { theme: "dark" });
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Unable to save document appearance.", { theme: "dark" });
+    } finally {
+      setIsSavingAppearance(false);
+    }
+  };
+
   const updateEmployee = (updated) =>
     setEmployees((current) => current.map((employee) => (employee.id === updated.id ? updated : employee)));
 
@@ -350,6 +379,115 @@ function Templates() {
                 </div>
               </form>
             </div>
+          )}
+          {!isSettingsLoading && (
+            <form onSubmit={saveAppearance} className="mt-5 grid gap-5 rounded-2xl border border-slate-200 p-4 lg:grid-cols-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Palette className="text-teal-600" size={18} />
+                  <h3 className="font-semibold text-slate-800">Document appearance</h3>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Shared appearance for new offer letters and payslips. Existing finalized documents are unchanged.</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Theme color
+                    <input
+                      type="color"
+                      value={settings.appearance.themeColor}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        appearance: { ...current.appearance, themeColor: event.target.value },
+                      }))}
+                      className="mt-1 h-11 w-full rounded-lg border border-slate-200 bg-white p-1"
+                    />
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Layout preset
+                    <select
+                      value={settings.appearance.preset}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        appearance: { ...current.appearance, preset: event.target.value },
+                      }))}
+                      className={inputClassName}
+                    >
+                      <option value="classic">Classic</option>
+                      <option value="modern">Modern</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Header styling
+                    <select
+                      value={settings.appearance.headerStyle}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        appearance: { ...current.appearance, headerStyle: event.target.value },
+                      }))}
+                      className={inputClassName}
+                    >
+                      <option value="rule">Brand rule</option>
+                      <option value="accent">Bold accent</option>
+                      <option value="plain">Plain</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Footer styling
+                    <select
+                      value={settings.appearance.footerStyle}
+                      onChange={(event) => setSettings((current) => ({
+                        ...current,
+                        appearance: { ...current.appearance, footerStyle: event.target.value },
+                      }))}
+                      className={inputClassName}
+                    >
+                      <option value="rule">Brand rule</option>
+                      <option value="plain">Plain</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingAppearance}
+                    className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+                  >
+                    {isSavingAppearance && <Loader2 className="animate-spin" size={16} />}
+                    Save appearance
+                  </button>
+                </div>
+              </div>
+              <div
+                className="rounded-xl border bg-white p-5 shadow-sm"
+                style={{ borderColor: `${settings.appearance.themeColor}66` }}
+                aria-label="Live document appearance preview"
+              >
+                <div
+                  className="flex items-center gap-3 pb-3"
+                  style={{
+                    borderBottom: settings.appearance.headerStyle === "plain"
+                      ? "none"
+                      : `${settings.appearance.headerStyle === "accent" ? 4 : settings.appearance.preset === "modern" ? 3 : 1}px solid ${settings.appearance.themeColor}`,
+                  }}
+                >
+                  {settings.logo && <img src={`data:${settings.logo.mime};base64,${settings.logo.data}`} alt="" className="h-10 w-14 object-contain" />}
+                  <div>
+                    <p className="font-bold" style={{ color: settings.appearance.themeColor }}>{company.name || "Company name"}</p>
+                    <p className="text-xs text-slate-500">{company.address || "Company address"}</p>
+                  </div>
+                </div>
+                <p className="mt-5 text-xs font-bold uppercase tracking-widest" style={{ color: settings.appearance.themeColor }}>Offer Letter / Payslip</p>
+                <div className="mt-3 h-2 w-3/4 rounded bg-slate-100" />
+                <div className="mt-2 h-2 w-full rounded bg-slate-100" />
+                <div className="mt-2 h-2 w-5/6 rounded bg-slate-100" />
+                <div
+                  className="mt-8 border-t pt-2 text-right text-xs text-slate-400"
+                  style={{ borderColor: settings.appearance.footerStyle === "plain" ? "transparent" : settings.appearance.themeColor }}
+                >
+                  {settings.appearance.preset} · live preview
+                </div>
+              </div>
+            </form>
           )}
         </section>
 

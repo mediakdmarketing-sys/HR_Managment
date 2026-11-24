@@ -57,3 +57,73 @@ test("requires employee identification and reports parser-detected malformed row
     "Wrong column count",
   );
 });
+
+test("validates detailed daily attendance clocks and preserves source hour text", () => {
+  const record = {
+    recordType: "dailyDetailed",
+    employeeId: "EMP001",
+    date: "2026-11-06",
+    day: "Fri",
+    clockIn: "08:30 AM",
+    clockOut: "17:00",
+    attendanceStatus: "Full day",
+    leave: "",
+    hoursSource: "10.32",
+    breakSource: "1",
+    productiveSource: "9.32",
+  };
+  const result = validateAttendanceRecord(record);
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.hoursSource, "10.32");
+  assert.equal(result.value.workingHours, undefined);
+  assert.match(
+    validateAttendanceRecord({ ...record, clockIn: "0.28125" }).error,
+    /supported clock format/,
+  );
+  assert.match(
+    validateAttendanceRecord({ ...record, day: "Tuesdayish" }).error,
+    /weekday name/,
+  );
+});
+
+test("validates monthly summaries independently and keeps time source values unconverted", () => {
+  const record = {
+    recordType: "monthlySummary",
+    employeeId: "EMP001",
+    email: "jane@example.test",
+    name: "Jane",
+    department: "HR",
+    month: "2026-11",
+    daysPresent: "5",
+    totalHoursSource: "37.15",
+    worked: "37h 8m",
+    breakSource: "4h 1m",
+    idle: "0s",
+    flaggedDays: "3",
+    fullDays: "0",
+    halfDays: "0",
+    otherDays: "0",
+    otherHoursSource: "0",
+    basePayUsd: "0",
+    bonusUsd: "0",
+    netPayUsd: "0",
+    daysWithoutRate: "0",
+    synced: "false",
+  };
+  const result = validateAttendanceRecord(record);
+  assert.equal(result.error, undefined);
+  assert.equal(result.value.totalHoursSource, "37.15");
+  assert.equal(result.value.synced, false);
+  assert.match(
+    validateAttendanceRecord({ ...record, month: "November 2026" }).error,
+    /YYYY-MM/,
+  );
+  assert.match(
+    validateAttendanceRecord({ ...record, worked: "37.15" }).error,
+    /duration format/,
+  );
+  assert.match(
+    validateAttendanceRecord({ ...record, synced: "pending" }).error,
+    /true or false/,
+  );
+});

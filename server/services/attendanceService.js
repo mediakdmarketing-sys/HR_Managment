@@ -3,6 +3,7 @@ import { validateAttendanceRecord } from "../utils/attendanceValidation.js";
 
 const employees = firestore.collection("employees");
 const attendanceRecords = firestore.collection("attendanceRecords");
+const attendanceMonthlySummaries = firestore.collection("attendanceMonthlySummaries");
 const MAX_IMPORT_SIZE = 500;
 const IMPORT_CONCURRENCY = 25;
 
@@ -21,6 +22,17 @@ export const getAttendanceRecords = async () => {
     .sort(
       (left, right) =>
         String(right.date).localeCompare(String(left.date)) ||
+        String(left.employeeName).localeCompare(String(right.employeeName)),
+    );
+};
+
+export const getMonthlyAttendanceSummaries = async () => {
+  const snapshot = await attendanceMonthlySummaries.get();
+  return snapshot.docs
+    .map(toAttendanceRecord)
+    .sort(
+      (left, right) =>
+        String(right.month).localeCompare(String(left.month)) ||
         String(left.employeeName).localeCompare(String(right.employeeName)),
     );
 };
@@ -70,8 +82,8 @@ export const importAttendanceRecords = async (records, importedBy) => {
       return;
     }
 
-    const { employeeId, email, date, attendanceStatus, workingHours, totalBreakTime, department } =
-      validated.value;
+    const validatedRecord = validated.value;
+    const { employeeId, email } = validatedRecord;
     const employeeByProvidedId = employeeId ? employeeById.get(employeeId) : null;
     const employeeByProvidedEmail = email ? employeesByEmail.get(email) : null;
     if (employeeId && !employeeByProvidedId) {
@@ -108,20 +120,22 @@ export const importAttendanceRecords = async (records, importedBy) => {
       return;
     }
 
-    const documentId = `${employee.id}_${date}`;
-    const reference = attendanceRecords.doc(documentId);
+    const isMonthly = validatedRecord.recordType === "monthlySummary";
+    const documentId = `${employee.id}_${isMonthly ? validatedRecord.month : validatedRecord.date}`;
+    const reference = (isMonthly ? attendanceMonthlySummaries : attendanceRecords).doc(documentId);
     const data = {
+      ...validatedRecord,
       employeeId: employee.id,
       employeeName: String(employee.name || "").trim(),
       employeeEmail: String(employee.email || "").trim().toLowerCase(),
-      department: department || String(employee.department || "").trim() || "Unassigned",
-      date,
-      attendanceStatus,
-      workingHours,
-      totalBreakTime,
+      department: validatedRecord.department || String(employee.department || "").trim() || "Unassigned",
       importedAt: new Date().toISOString(),
       importedBy,
     };
+    if (!validatedRecord.recordType) {
+      data.workingHours = validatedRecord.workingHours;
+      data.totalBreakTime = validatedRecord.totalBreakTime;
+    }
 
     try {
       const created = await firestore.runTransaction(async (transaction) => {
@@ -141,7 +155,7 @@ export const importAttendanceRecords = async (records, importedBy) => {
       }
       console.error("Attendance record could not be saved.", {
         employeeId: employee.id,
-        date,
+        recordDate: validatedRecord.date || validatedRecord.month,
         error,
       });
       results[index] = {

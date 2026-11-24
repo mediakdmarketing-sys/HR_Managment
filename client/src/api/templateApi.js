@@ -15,3 +15,5 @@ export const removeTemplateSignature = () =>
   axios.delete(`${API_BASE}/templates/signature`, authConfig());
 export const saveCompanyDetails = (data) =>
   axios.put(`${API_BASE}/templates/company`, data, authConfig());
+export const saveDocumentAppearance = (data) =>
+  axios.put(`${API_BASE}/templates/appearance`, data, authConfig());

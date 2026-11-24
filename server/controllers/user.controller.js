@@ -1,5 +1,6 @@
 import * as userService
 from "../services/userService.js";
+import { logAudit } from "../services/auditService.js";
 import { resetBirthdayReminderCheck } from "../services/birthdayService.js";
 import {
   isRecentlyAuthenticated,
@@ -163,6 +164,11 @@ export const getAccountNumber = async (req, res) => {
     if (!user) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
+    await logAudit({
+      action: "ACCOUNT_NUMBER_REVEALED",
+      employeeId: req.params.id,
+      performedBy: req.user.name || req.user.email,
+    });
     res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({ success: true, data: { accountNumber: user.accountNumber || "" } });
   } catch (error) {
@@ -185,7 +191,7 @@ export const updateUser = async (req, res) => {
     if (validationError) {
       return res.status(400).json({ success: false, message: validationError });
     }
-    const user = await userService.updateUserService(req.params.id, body);
+    const user = await userService.updateUserService(req.params.id, body, req.user.name || req.user.email);
     if (!user) {
       return res.status(404).json({ success: false, message: "Employee not found" });
     }
@@ -248,5 +254,67 @@ export const removeProfilePhoto = async (req, res) => {
     return res.status(200).json({ success: true });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ==========================================
+// Employee Personnel Documents Handlers
+// ==========================================
+
+export const listEmployeeDocuments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const docs = await userService.listEmployeeDocumentsService(id);
+    return res.status(200).json({ success: true, data: docs });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+};
+
+export const uploadEmployeeDocument = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category, title, fileName, fileType, fileData, fileBase64, fileSize, notes } = req.body;
+    if (!category || !title) {
+      return res.status(400).json({ success: false, message: "Category and title are required" });
+    }
+    const doc = await userService.uploadEmployeeDocumentService({
+      employeeId: id,
+      category,
+      title,
+      fileName,
+      fileType,
+      // accept both old `fileData` key and new `fileBase64` key
+      fileBase64: fileBase64 || fileData || null,
+      fileSize,
+      notes,
+      uploadedBy: req.user.name || "HR Administrator",
+    });
+    return res.status(201).json({ success: true, data: doc });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+};
+
+export const deleteEmployeeDocument = async (req, res) => {
+  try {
+    const { docId } = req.params;
+    await userService.deleteEmployeeDocumentService(docId, req.user.name || req.user.email);
+    return res.status(200).json({ success: true, message: "Document deleted" });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+};
+
+export const downloadEmployeeDocument = async (req, res) => {
+  try {
+    const { docId } = req.params;
+    const doc = await userService.getEmployeeDocumentService(docId);
+    if (!doc) {
+      return res.status(404).json({ success: false, message: "Document not found" });
+    }
+    return res.status(200).json({ success: true, data: doc });
+  } catch (error) {
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message });
   }
 };

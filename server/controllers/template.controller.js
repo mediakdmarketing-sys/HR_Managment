@@ -14,8 +14,8 @@ export const getSettings = async (req, res) => {
 // Logo and company details only (no signature), for documents any role can print, like payslips.
 export const getLetterhead = async (req, res) => {
   try {
-    const { logo, company } = await templateService.getLetterSettings();
-    return res.json({ success: true, data: { logo, company } });
+    const { logo, company, appearance } = await templateService.getLetterSettings();
+    return res.json({ success: true, data: { logo, company, appearance } });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -63,5 +63,18 @@ export const saveCompany = async (req, res) => {
     return res.json({ success: true, data: company });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const saveAppearance = async (req, res) => {
+  try {
+    const appearance = await templateService.saveAppearance(req.body || {});
+    return res.json({ success: true, data: appearance });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Unable to save document appearance." : error.message,
+    });
   }
 };

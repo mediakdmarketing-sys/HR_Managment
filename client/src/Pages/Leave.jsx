@@ -26,6 +26,7 @@ import {
   findAllLeaveRequestConflicts,
   findLeaveRequestConflicts,
 } from "../utils/leaveConflicts";
+import CsvImportPanel from "../components/CsvImportPanel";
 
 const initialLeaveTypes = [
   { id: "annual", name: "Annual leave", days: 20, carryForward: 5 },
@@ -36,6 +37,52 @@ const initialLeaveTypes = [
 
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
+
+const standardLeaveImportColumns = [
+  { key: "employeeId", header: "employeeId", requiredNote: "Employee ID or employeeEmail is required" },
+  { key: "employeeEmail", header: "employeeEmail", requiredNote: "Employee ID or employeeEmail is required" },
+  { key: "leaveType", header: "leaveType", required: true },
+  { key: "startDate", header: "startDate", required: true },
+  { key: "endDate", header: "endDate", required: true },
+  { key: "days", header: "days" },
+  { key: "reason", header: "reason", required: true },
+  { key: "externalRequestId", header: "externalRequestId" },
+  { key: "sourceSubmittedAt", header: "Timestamp" },
+];
+
+const googleFormsImportColumns = [
+  { key: "sourceSubmittedAt", header: "Timestamp" },
+  { key: "employeeEmail", header: "Email Address", requiredNote: "Employee ID or Email Address is required" },
+  { key: "leaveType", header: "Leave Type", required: true },
+  { key: "startDate", header: "Start Date", required: true },
+  { key: "endDate", header: "End Date", required: true },
+  { key: "reason", header: "Reason", required: true },
+  { key: "externalRequestId", header: "Response ID" },
+];
+
+const leaveImportRequiredHeaders = [
+  ["employeeId", "employeeEmail", "emailAddress"],
+  ["leaveType"],
+  ["startDate"],
+  ["endDate"],
+  ["reason"],
+];
+
+const validateLeaveImportRow = (row) => {
+  const errors = [];
+  if (!row.employeeid && !row.employeeemail && !row.emailaddress && !row.email) {
+    errors.push("Employee ID or employee email is required.");
+  }
+  for (const [field, label] of [
+    ["leavetype", "Leave type"],
+    ["startdate", "Start date"],
+    ["enddate", "End date"],
+    ["reason", "Reason"],
+  ]) {
+    if (!String(row[field] || "").trim()) errors.push(`${label} is required.`);
+  }
+  return errors;
+};
 
 const formatDate = (date) => {
   if (
@@ -125,12 +172,9 @@ function Leave() {
   const [manualForm, setManualForm] = useState(emptyManualForm);
   const [isRequestSaving, setIsRequestSaving] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
-  const [importFile, setImportFile] = useState(null);
   const [importMode, setImportMode] = useState("csv");
   const [importDateFormat, setImportDateFormat] = useState("auto");
   const [isImporting, setIsImporting] = useState(false);
-  const [importError, setImportError] = useState("");
-  const [importResult, setImportResult] = useState(null);
   const decidingRef = useRef(false);
   const requestSavingRef = useRef(false);
   const importingRef = useRef(false);
@@ -345,23 +389,15 @@ function Leave() {
     }
   };
 
-  const submitLeaveCsv = async (event) => {
-    event.preventDefault();
-    if (importingRef.current) return;
-    if (!importFile) {
-      setImportError("Choose a CSV file to import.");
-      return;
-    }
-
+  const importLeaveContent = async (content, sourceName) => {
+    if (importingRef.current) throw new Error("A leave import is already in progress.");
     importingRef.current = true;
     setIsImporting(true);
-    setImportError("");
-    setImportResult(null);
     try {
       const response = await importLeaveCsv({
-        content: await importFile.text(),
+        content,
         sourceType: importMode,
-        sourceName: importFile.name,
+        sourceName,
         dateFormat: importDateFormat,
       });
       const result = response.data?.data;
@@ -374,7 +410,6 @@ function Leave() {
       ) {
         throw new Error("The server returned an invalid import summary.");
       }
-      setImportResult(result);
       const importedRequests = result.rows
         .filter((row) => row.status === "imported" && row.request?.id)
         .map((row) => row.request);
@@ -394,11 +429,12 @@ function Leave() {
       } else {
         toast.success(summary, { theme: "dark" });
       }
+      return result;
     } catch (error) {
-      const message =
-        error.response?.data?.message || error.message || "Unable to import leave CSV.";
-      setImportError(message);
-      toast.error(message, { theme: "dark" });
+      throw new Error(
+        error.response?.data?.message || error.message || "Unable to import leave CSV.",
+        { cause: error },
+      );
     } finally {
       importingRef.current = false;
       setIsImporting(false);
@@ -508,8 +544,6 @@ function Leave() {
                         <button
                           type="button"
                           onClick={() => {
-                            setImportError("");
-                            setImportResult(null);
                             setIsImportOpen(true);
                           }}
                           className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-white px-4 py-2.5 text-sm font-semibold text-teal-800 hover:bg-teal-50"
@@ -1032,133 +1066,24 @@ function Leave() {
         </div>
       )}
       {isImportOpen && isHr && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/50 p-4">
-          <form
-            onSubmit={submitLeaveCsv}
-            className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-800">Import Leave CSV</h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Valid rows are created as Pending; existing requests are never overwritten.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={isImporting}
-                onClick={() => setIsImportOpen(false)}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-50"
-                aria-label="Close leave CSV import"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <label className="mt-5 block text-sm font-semibold text-slate-700">
-              Import format
-              <select
-                value={importMode}
-                onChange={(event) => {
-                  setImportMode(event.target.value);
-                  setImportResult(null);
-                }}
-                disabled={isImporting}
-                className={inputClassName}
-              >
-                <option value="csv">Standard leave CSV</option>
-                <option value="google_forms">Google Forms / Sheets response CSV</option>
-              </select>
-            </label>
-            <label className="mt-4 block text-sm font-semibold text-slate-700">
-              CSV file
-              <input
-                required
-                type="file"
-                accept=".csv,text/csv"
-                disabled={isImporting}
-                onChange={(event) => {
-                  setImportFile(event.target.files?.[0] || null);
-                  setImportError("");
-                  setImportResult(null);
-                }}
-                className={inputClassName}
-              />
-            </label>
-            <label className="mt-4 block text-sm font-semibold text-slate-700">
-              Slash-date format
-              <select
-                value={importDateFormat}
-                onChange={(event) => setImportDateFormat(event.target.value)}
-                disabled={isImporting}
-                className={inputClassName}
-              >
-                <option value="auto">Auto; reject ambiguous dates</option>
-                <option value="mdy">Month / day / year</option>
-                <option value="dmy">Day / month / year</option>
-              </select>
-            </label>
-            <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-              {importMode === "google_forms" ? (
-                <>
-                  <p className="font-semibold text-slate-700">Google Forms / Sheets column mapping</p>
-                  <p className="mt-1">
-                    Timestamp → submission metadata only; Employee ID or Email Address → employee;
-                    Leave Type, Start Date, End Date and Reason → request; Response ID → stable reference.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold text-slate-700">Required headers</p>
-                  <p className="mt-1">
-                    employeeId or employeeEmail, leaveType, startDate, endDate and reason.
-                    Optional: days, externalRequestId, Timestamp.
-                  </p>
-                </>
-              )}
-              <p className="mt-2 text-xs">
-                Dates support ISO YYYY-MM-DD, named months, and slash dates. Ambiguous slash dates need an explicit format.
-                Rows with a supplied days value must match the inclusive calendar-date duration.
-              </p>
-            </div>
-            {importError && (
-              <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700" role="alert">
-                {importError}
-              </p>
-            )}
-            {importResult && (
-              <div className="mt-4 rounded-xl border border-slate-200 p-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {[
-                    ["Imported", importResult.imported, "text-emerald-700"],
-                    ["Duplicates", importResult.duplicated, "text-amber-700"],
-                    ["Skipped", importResult.skipped, "text-slate-600"],
-                    ["Failed", importResult.failed, "text-red-700"],
-                  ].map(([label, count, color]) => (
-                    <div key={label} className="rounded-lg bg-slate-50 p-3">
-                      <p className="text-xs text-slate-500">{label}</p>
-                      <p className={`mt-1 text-lg font-bold ${color}`}>{count}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 max-h-48 space-y-2 overflow-y-auto" aria-live="polite">
-                  {importResult.rows.map((row, index) => (
-                    <p
-                      key={`${row.rowNumber}-${index}`}
-                      className={`rounded-lg px-3 py-2 text-xs ${
-                        row.status === "failed"
-                          ? "bg-red-50 text-red-700"
-                          : row.status === "imported"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-slate-50 text-slate-600"
-                      }`}
-                    >
-                      Row {row.rowNumber}: {row.status} — {row.message}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="mt-6 flex justify-end gap-3">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
+          <div className="my-6 max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-slate-50 p-4 shadow-xl sm:p-6">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
+              <label className="block text-sm font-semibold text-slate-700">
+                Import format
+                <select value={importMode} onChange={(event) => setImportMode(event.target.value)} disabled={isImporting} className={inputClassName}>
+                  <option value="csv">Standard leave CSV</option>
+                  <option value="google_forms">Google Forms / Sheets response CSV</option>
+                </select>
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Slash-date format
+                <select value={importDateFormat} onChange={(event) => setImportDateFormat(event.target.value)} disabled={isImporting} className={inputClassName}>
+                  <option value="auto">Auto; reject ambiguous dates</option>
+                  <option value="mdy">Month / day / year</option>
+                  <option value="dmy">Day / month / year</option>
+                </select>
+              </label>
               <button
                 type="button"
                 disabled={isImporting}
@@ -1167,15 +1092,24 @@ function Leave() {
               >
                 Close
               </button>
-              <button
-                type="submit"
-                disabled={isImporting || !importFile}
-                className="rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-50"
-              >
-                {isImporting ? "Importing..." : "Import valid rows"}
-              </button>
             </div>
-          </form>
+            <p className="mb-4 rounded-xl bg-white p-3 text-sm text-slate-600">
+              Valid rows are created as Pending; existing requests are never overwritten. Dates support ISO YYYY-MM-DD, named months, or slash dates (ambiguous slash dates require a selected format). Google Forms timestamps are retained as submission metadata.
+            </p>
+            <CsvImportPanel
+              key={importMode}
+              title={importMode === "google_forms" ? "Import Google Forms / Sheets responses" : "Import leave requests"}
+              description="Use a CSV file, paste comma- or tab-separated content, or enter editable rows. Every method uses the same server-side leave validation, conflict checks, duplicate detection and persistence."
+              columns={importMode === "google_forms" ? googleFormsImportColumns : standardLeaveImportColumns}
+              requiredHeaderGroups={leaveImportRequiredHeaders}
+              validateRow={validateLeaveImportRow}
+              templateName={importMode === "google_forms" ? "google-forms-leave-template.csv" : "leave-import-template.csv"}
+              sampleRow={importMode === "google_forms"
+                ? { sourceSubmittedAt: "2026-01-15 09:00:00", employeeEmail: "example@example.test", leaveType: "Annual leave", startDate: "2026-02-01", endDate: "2026-02-01", reason: "Example only; replace before import", externalRequestId: "EXAMPLE-REMOVE" }
+                : { employeeId: "", employeeEmail: "example@example.test", leaveType: "Annual leave", startDate: "2026-02-01", endDate: "2026-02-01", days: "1", reason: "Example only; replace before import", externalRequestId: "EXAMPLE-REMOVE", sourceSubmittedAt: "" }}
+              onImport={importLeaveContent}
+            />
+          </div>
         </div>
       )}
       {approvalPreview && (

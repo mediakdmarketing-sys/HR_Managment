@@ -5,6 +5,7 @@ import {
   getLetterhead,
   getSettings,
   removeImage,
+  saveAppearance,
   saveCompany,
   saveImage,
 } from "../controllers/template.controller.js";
@@ -18,4 +19,5 @@ router.put("/logo", saveImage("logo"));
 router.put("/signature", saveImage("signature"));
 router.delete("/signature", removeImage("signature"));
 router.put("/company", saveCompany);
+router.put("/appearance", saveAppearance);
 export default router;

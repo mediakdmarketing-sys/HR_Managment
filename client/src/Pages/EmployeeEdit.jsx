@@ -29,6 +29,8 @@ const letterFields = [
   ["joiningDate", "Joining date", "date"],
   ["lastWorkingDate", "Last working day", "date"],
   ["address", "Address", "textarea"],
+  ["city", "City", "text"],
+  ["country", "Country", "text"],
 ];
 const TITLES = ["Mr.", "Ms.", "Mrs.", "Miss", "Dr."];
 
@@ -268,6 +270,48 @@ export default function EmployeeEdit() {
                   )}
                 </label>
               ))}
+              <label className="text-sm font-semibold text-slate-700">
+                {form.countryCode === "IN" ? "PIN code" : "Postal code"}
+                <input
+                  inputMode="numeric"
+                  maxLength={form.countryCode === "IN" ? 6 : 12}
+                  name={form.countryCode === "IN" ? "pinCode" : "postalCode"}
+                  value={form.countryCode === "IN" ? form.pinCode ?? "" : form.postalCode ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Personal email
+                <input
+                  name="personalEmail"
+                  type="email"
+                  value={form.personalEmail ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Phone number
+                <input
+                  name="phone"
+                  type="tel"
+                  value={form.phone ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                Date of birth
+                <input
+                  name="dateOfBirth"
+                  type="date"
+                  max={new Date().toISOString().slice(0, 10)}
+                  value={form.dateOfBirth ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
               <div className="border-t border-slate-200 pt-5 sm:col-span-2">
                 <h2 className="text-lg font-bold text-slate-800">Bank details</h2>
                 <p className="mt-1 text-sm text-slate-500">Bank information is stored separately from salary currency and payroll settings.</p>
@@ -340,11 +384,31 @@ export default function EmployeeEdit() {
                 />
               </label>
               <label className="text-sm font-semibold text-slate-700">
+                Bank code
+                <input
+                  maxLength={20}
+                  name="bankCode"
+                  value={form.bankCode ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
                 Branch code
                 <input
                   maxLength={20}
                   name="bankBranchCode"
                   value={form.bankBranchCode ?? ""}
+                  onChange={updateField}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                />
+              </label>
+              <label className="text-sm font-semibold text-slate-700">
+                MICR code
+                <input
+                  maxLength={20}
+                  name="micrCode"
+                  value={form.micrCode ?? ""}
                   onChange={updateField}
                   className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
                 />

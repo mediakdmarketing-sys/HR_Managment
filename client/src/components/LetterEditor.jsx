@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Eye, Loader2, PencilLine, X } from "lucide-react";
+import { Download, Eye, Loader2, PencilLine, Printer, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { updateUser } from "../api/userApi";
 import {
@@ -220,7 +220,13 @@ function LetterEditor({ type, employee, settings, onClose, onProfileSaved }) {
   const downloadingRef = useRef(false);
 
   const pdfProps = useMemo(
-    () => ({ letter, company: settings.company, logo: settings.logo, signature: settings.signature }),
+    () => ({
+      letter,
+      company: settings.company,
+      logo: settings.logo,
+      signature: settings.signature,
+      appearance: settings.appearance,
+    }),
     [letter, settings],
   );
 
@@ -321,6 +327,20 @@ function LetterEditor({ type, employee, settings, onClose, onProfileSaved }) {
     }
   };
 
+  const print = () => {
+    if (missingFields.length) {
+      toast.error(`Please fill in: ${missingFields.join(", ")}`, { theme: "dark" });
+      return;
+    }
+    if (!previewUrl || isRendering) {
+      toast.info("Wait for the latest letter preview before printing.", { theme: "dark" });
+      return;
+    }
+    if (!window.open(previewUrl, "_blank")) {
+      toast.error("Allow pop-ups for this site to print the letter.", { theme: "dark" });
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[70] flex bg-slate-900/60 sm:p-4" role="dialog" aria-modal="true" aria-label={label}>
       <div className="app-bg mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-hidden bg-slate-100 shadow-2xl sm:rounded-2xl">
@@ -367,6 +387,15 @@ function LetterEditor({ type, employee, settings, onClose, onProfileSaved }) {
             >
               {isDownloading ? <Loader2 className="animate-spin" size={17} /> : <Download size={17} />}
               Download PDF
+            </button>
+            <button
+              type="button"
+              onClick={print}
+              disabled={!previewUrl || isRendering}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <Printer size={17} />
+              Print
             </button>
             <button
               type="button"

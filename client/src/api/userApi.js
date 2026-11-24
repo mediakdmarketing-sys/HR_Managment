@@ -35,3 +35,9 @@ export const getAccountNumber = (id) => axios.get(`${API}/${id}/account-number`)
 export const getProfilePhoto = (id) => axios.get(`${API}/${id}/photo`);
 export const saveProfilePhoto = (photo) => axios.put(`${API}/me/photo`, photo);
 export const removeProfilePhoto = () => axios.delete(`${API}/me/photo`);
+
+// Personnel File Documents
+export const getEmployeeDocuments = (id) => axios.get(`${API}/${id}/documents`);
+export const uploadEmployeeDocument = (id, payload) => axios.post(`${API}/${id}/documents`, payload);
+export const deleteEmployeeDocument = (id, docId) => axios.delete(`${API}/${id}/documents/${docId}`);
+export const downloadEmployeeDocument = (id, docId) => axios.get(`${API}/${id}/documents/${docId}/download`);

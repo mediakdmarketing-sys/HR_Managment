@@ -41,6 +41,13 @@ export default function Login() {
       return;
     }
 
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast.error("Please enter a valid email address", { theme: "dark" });
+      return;
+    }
+
     if (loading) return;
     try {
       setLoading(true);

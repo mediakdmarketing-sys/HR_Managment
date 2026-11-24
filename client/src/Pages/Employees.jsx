@@ -12,29 +12,171 @@ import {
 } from "../api/userApi";
 import { getUser } from "../utils/auth";
 import { OTHER_BANK, bankOptions, isEmployeeBankDetailsComplete } from "../utils/bank";
+import CsvImportPanel from "../components/CsvImportPanel";
+import PersonnelBulkImport from "../components/PersonnelBulkImport";
 
 const PAGE_SIZE = 10;
 
 const initialForm = {
-  employeeId: "",
+  employeeId: "EXAMPLE-REMOVE",
   name: "",
   email: "",
   role: "Employee",
   department: "Software",
   countryCode: "LK",
   countryOfEmployment: "Sri Lanka",
+  address: "",
+  city: "",
+  country: "Sri Lanka",
+  postalCode: "",
+  pinCode: "",
+  phone: "",
+  personalEmail: "",
+  dateOfBirth: "",
+  nationalId: "",
   bankName: "",
   otherBankName: "",
   accountHolderName: "",
   accountNumber: "",
   bankBranch: "",
+  bankCode: "",
   bankBranchCode: "",
+  micrCode: "",
   ifscCode: "",
   joiningDate: "",
+  lastWorkingDate: "",
+  assignedTeamLead: "Not assigned",
+  title: "",
+  designation: "",
 };
 
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
+
+const employeeImportColumns = [
+  ["employeeId", false], ["name", true], ["email", true], ["role", true], ["department", true],
+  ["countryOfEmployment", true], ["countryCode", false], ["address", true], ["city", true],
+  ["country", true], ["postalCode", false, "Required for Sri Lanka"], ["pinCode", false, "Required for India"],
+  ["phone", true], ["personalEmail", false], ["dateOfBirth", false], ["nationalId", false],
+  ["bankName", true], ["otherBankName", false], ["accountHolderName", true], ["accountNumber", true, null, true],
+  ["bankBranch", false], ["bankCode", false], ["bankBranchCode", false], ["micrCode", false], ["ifscCode", false, "Required for India"],
+  ["joiningDate", true], ["lastWorkingDate", false], ["assignedTeamLead", false], ["title", false], ["designation", true],
+].map(([key, required, requiredNote, sensitive]) => ({
+  key,
+  header: key,
+  required,
+  requiredNote,
+  sensitive,
+}));
+
+const employeeImportRequiredHeaders = [
+  ["name"], ["email"], ["role"], ["department"], ["countryOfEmployment"], ["address"],
+  ["city"], ["country"], ["phone"], ["designation"], ["joiningDate"], ["bankName"],
+  ["accountHolderName"], ["accountNumber"],
+];
+
+const validateEmployeeImportRow = (row) => {
+  const errors = [];
+  const required = [
+    ["name", "Name"], ["email", "Email"], ["role", "Role"], ["department", "Department"],
+    ["countryofemployment", "Country of employment"], ["address", "Address"], ["city", "City"],
+    ["country", "Country"], ["phone", "Phone"], ["designation", "Designation"],
+    ["joiningdate", "Joining date"], ["bankname", "Bank name"],
+    ["accountholdername", "Account holder name"], ["accountnumber", "Account number"],
+  ];
+  required.forEach(([key, label]) => {
+    if (!String(row[key] || "").trim()) errors.push(`${label} is required.`);
+  });
+  if (row.employeeid && !/^EMP\d{3,}$/i.test(row.employeeid.trim())) errors.push("Employee ID must use EMP followed by at least three digits.");
+  const country = String(row.countrycode || row.countryofemployment || "").trim().toLowerCase();
+  if ((country === "lk" || country === "sri lanka") && !/^\d{5}$/.test(row.postalcode || "")) {
+    errors.push("Sri Lankan postal code must contain five digits.");
+  }
+  if ((country === "in" || country === "india") && !/^\d{6}$/.test(row.pincode || "")) {
+    errors.push("Indian PIN code must contain six digits.");
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(row.email || "").trim())) errors.push("Email is not valid.");
+  if (!/^\+?[0-9\s()-]{7,20}$/.test(String(row.phone || "").trim())) errors.push("Phone number is not valid.");
+  if (!/^\d{6,20}$/.test(String(row.accountnumber || "").replace(/[\s-]/g, ""))) errors.push("Account number must contain 6 to 20 digits.");
+  if ((country === "in" || country === "india") && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(row.ifsccode || "").trim().toUpperCase())) {
+    errors.push("Indian employees require a valid IFSC code.");
+  }
+  return errors;
+};
+
+const FieldError = ({ errors, name }) =>
+  errors[name] ? (
+    <p id={`${name}-error`} className="mt-1 text-xs font-medium text-red-600">
+      {errors[name]}
+    </p>
+  ) : null;
+
+const validateNewEmployee = (form) => {
+  const errors = {};
+  const requireText = (field, label) => {
+    if (!String(form[field] || "").trim()) errors[field] = `${label} is required.`;
+  };
+  if (form.employeeId && !/^EMP\d{3,}$/i.test(form.employeeId.trim())) {
+    errors.employeeId = "Employee ID must use EMP followed by at least three digits.";
+  }
+  requireText("name", "Name");
+  if (String(form.name || "").trim().length < 2) errors.name = "Enter at least 2 characters.";
+  requireText("email", "Company email");
+  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    errors.email = "Enter a valid email address.";
+  }
+  requireText("phone", "Phone number");
+  if (form.phone && !/^\+?[0-9\s()-]{7,20}$/.test(form.phone.trim())) {
+    errors.phone = "Enter a valid phone number.";
+  }
+  requireText("role", "Role");
+  requireText("department", "Department");
+  requireText("designation", "Designation");
+  requireText("joiningDate", "Joining date");
+  if (form.joiningDate && !isValidIsoDate(form.joiningDate)) {
+    errors.joiningDate = "Enter a valid joining date.";
+  }
+  if (form.lastWorkingDate && !isValidIsoDate(form.lastWorkingDate)) {
+    errors.lastWorkingDate = "Enter a valid last working date.";
+  }
+  if (form.dateOfBirth && (!isValidIsoDate(form.dateOfBirth) || form.dateOfBirth > new Date().toISOString().slice(0, 10))) {
+    errors.dateOfBirth = "Enter a valid date of birth.";
+  }
+  requireText("address", "Address");
+  requireText("city", "City");
+  requireText("country", "Country");
+  if (!form.countryCode) errors.countryCode = "Select a country of employment.";
+  if (form.countryCode === "LK" && !/^\d{5}$/.test(form.postalCode || "")) {
+    errors.postalCode = "Enter a valid five-digit postal code.";
+  }
+  if (form.countryCode === "IN" && !/^\d{6}$/.test(form.pinCode || "")) {
+    errors.pinCode = "Enter a valid six-digit PIN code.";
+  }
+  if (!form.bankName) errors.bankName = "Select a bank.";
+  if (form.bankName === OTHER_BANK && !String(form.otherBankName || "").trim()) {
+    errors.otherBankName = "Enter the bank name.";
+  }
+  requireText("accountHolderName", "Account holder name");
+  if (String(form.accountHolderName || "").trim().length < 2) {
+    errors.accountHolderName = "Enter at least 2 characters.";
+  }
+  if (!/^\d{6,20}$/.test(String(form.accountNumber || "").replace(/[\s-]/g, ""))) {
+    errors.accountNumber = "Account number must contain 6 to 20 digits.";
+  }
+  if (form.countryCode === "IN" && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(form.ifscCode || "").trim().toUpperCase())) {
+    errors.ifscCode = "Enter a valid 11-character IFSC code.";
+  }
+  if (form.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.personalEmail.trim())) {
+    errors.personalEmail = "Enter a valid personal email address.";
+  }
+  return errors;
+};
+
+const isValidIsoDate = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
 
 function Employees() {
   const user = getUser();
@@ -46,6 +188,7 @@ function Employees() {
     departments: [],
     countries: [],
     banksByCountry: {},
+    assignedTeamLeads: [],
   });
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -54,15 +197,15 @@ function Employees() {
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [formErrors, setFormErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [disablingId, setDisablingId] = useState(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
   // Refs block a second click that lands before React re-renders the disabled button.
   const savingRef = useRef(false);
   const disablingRef = useRef(false);
-  const importInputRef = useRef(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -161,10 +304,14 @@ function Employees() {
     setForm((currentForm) => {
       if (name === "countryCode") {
         const country = employeeOptions.countries.find((item) => item.code === value);
+        const previousCountry = currentForm.countryOfEmployment;
         return {
           ...currentForm,
           countryCode: value,
           countryOfEmployment: country?.name || "",
+          country: currentForm.country === previousCountry ? country?.name || "" : currentForm.country,
+          postalCode: "",
+          pinCode: "",
           bankName: "",
           otherBankName: "",
           ifscCode: value === "IN" ? currentForm.ifscCode : "",
@@ -179,7 +326,25 @@ function Employees() {
       }
       return { ...currentForm, [name]: value };
     });
+    setFormErrors((current) => {
+      const next = { ...current };
+      delete next[name];
+      if (name === "countryCode") {
+        delete next.countryCode;
+        delete next.postalCode;
+        delete next.pinCode;
+        delete next.bankName;
+        delete next.ifscCode;
+      }
+      if (name === "bankName") {
+        delete next.otherBankName;
+      }
+      return next;
+    });
   };
+
+  const fieldClass = (name) =>
+    `${inputClassName} ${formErrors[name] ? "border-red-500 focus:border-red-500 focus:ring-red-100" : ""}`;
 
   const banks = bankOptions(
     form.countryCode,
@@ -189,6 +354,9 @@ function Employees() {
   const addEmployee = async (event) => {
     event.preventDefault();
     if (!canAddEmployee || savingRef.current) return;
+    const errors = validateNewEmployee(form);
+    setFormErrors(errors);
+    if (Object.keys(errors).length) return;
     savingRef.current = true;
     setIsSaving(true);
 
@@ -203,6 +371,7 @@ function Employees() {
         ...currentEmployees,
       ]);
       setForm(initialForm);
+      setFormErrors({});
       setIsModalOpen(false);
       setCurrentPage(1);
       setLoadError("");
@@ -239,58 +408,32 @@ function Employees() {
     }
   };
 
-  const downloadTemplate = () => {
-    const headers = [
-      "employeeId", "name", "email", "role", "department",
-      "countryOfEmployment", "countryCode", "bankName", "otherBankName",
-      "accountHolderName", "accountNumber", "bankBranch", "bankBranchCode",
-      "ifscCode", "joiningDate", "assignedTeamLead", "title", "designation",
-    ];
-    const file = new Blob([`${headers.join(",")}\r\n`], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(file);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "employee-import-template.csv";
-    link.click();
-    URL.revokeObjectURL(url);
+  const importEmployeeContent = async (content) => {
+    const response = await importEmployeesCsv(content);
+    const result = response.data.data;
+    toast.success(`Import finished: ${result.imported} imported, ${result.duplicates} duplicates, ${result.skipped} skipped, ${result.failed} failed.`, { theme: "dark" });
+    if (result.imported) {
+      try {
+        const employeesResponse = await getUsers(1, "all", 1000);
+        setEmployees(employeesResponse.data.data.users);
+      } catch {
+        toast.info("Import completed, but the employee list could not be refreshed.", { theme: "dark" });
+      }
+    }
+    return result;
   };
 
-  const importCsvFile = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".csv")) {
-      toast.error("Choose a CSV file.", { theme: "dark" });
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast.error("The CSV file must be 2 MB or smaller.", { theme: "dark" });
-      return;
-    }
-    setIsImporting(true);
-    setImportResult(null);
+  const refreshEmployees = async () => {
     try {
-      const response = await importEmployeesCsv(await file.text());
-      const result = response.data.data;
-      setImportResult(result);
-      toast.success(`Import finished: ${result.imported} employee record(s) added.`, { theme: "dark" });
-      if (result.imported) {
-        try {
-          const employeesResponse = await getUsers(1, "all", 1000);
-          setEmployees(employeesResponse.data.data.users);
-        } catch {
-          toast.info("Import completed, but the employee list could not be refreshed.", { theme: "dark" });
-        }
-      }
-    } catch (error) {
-      const message = error.response?.data?.message || "Unable to import employees.";
-      toast.error(message, { theme: "dark" });
-    } finally {
-      setIsImporting(false);
+      const employeesResponse = await getUsers(1, "all", 1000);
+      setEmployees(employeesResponse.data.data.users);
+    } catch {
+      toast.info("Could not refresh employee list.", { theme: "dark" });
     }
   };
 
   return (
+    <>
     <UserLayout>
       <div className="space-y-6">
         <div className="bg-linear-to-r from-slate-900 to-teal-700 rounded-3xl p-8 text-white shadow-lg">
@@ -354,16 +497,9 @@ function Employees() {
 
             {canAddEmployee && (
               <>
-                <input
-                  ref={importInputRef}
-                  type="file"
-                  accept=".csv,text/csv"
-                  className="hidden"
-                  onChange={importCsvFile}
-                />
                 <button
                   type="button"
-                  onClick={downloadTemplate}
+                  onClick={() => setIsImportOpen(true)}
                   className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100"
                 >
                   <Download size={17} />
@@ -371,17 +507,29 @@ function Employees() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => importInputRef.current?.click()}
-                  disabled={isImporting}
+                  onClick={() => setIsImportOpen(true)}
                   className="flex items-center justify-center gap-2 rounded-xl border border-teal-200 px-4 py-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-50 disabled:opacity-50"
                 >
                   <Upload size={17} />
-                  {isImporting ? "Importing..." : "Import CSV"}
+                  Import CSV
                 </button>
                 <button
                   type="button"
-                  disabled={!employeeOptions.countries.length}
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={() => setIsBulkImportOpen(true)}
+                  className="flex items-center justify-center gap-2 rounded-xl border border-teal-300 bg-teal-50 px-4 py-3 text-sm font-semibold text-teal-800 transition hover:bg-teal-100"
+                  title="Import CSV with row-level validation preview"
+                >
+                  <Upload size={17} />
+                  Bulk Import (Preview)
+                </button>
+                <button
+                  type="button"
+                disabled={!employeeOptions.countries.length}
+                onClick={() => {
+                  setForm(initialForm);
+                  setFormErrors({});
+                  setIsModalOpen(true);
+                }}
                   className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800"
                 >
                   <Plus size={18} />
@@ -392,39 +540,12 @@ function Employees() {
           </div>
           {canAddEmployee && (
             <p className="mt-4 text-xs leading-5 text-slate-500">
-              CSV columns are provided by the template. Employee ID may be blank for automatic assignment;
-              dates must use YYYY-MM-DD. Country, bank, account holder and account number are required.
+              Employee ID may be blank for automatic assignment. New employee imports require contact,
+              address, designation, joining date and country-appropriate bank details.
               Imports are limited to 2 MB and 1,000 data rows.
             </p>
           )}
         </section>
-
-        {importResult && (
-          <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
-            <div className="grid gap-3 sm:grid-cols-4">
-              {[
-                ["Imported", importResult.imported, "text-emerald-700"],
-                ["Duplicates", importResult.duplicates, "text-amber-700"],
-                ["Skipped", importResult.skipped, "text-slate-600"],
-                ["Failed", importResult.failed, "text-red-700"],
-              ].map(([label, count, color]) => (
-                <div key={label} className="rounded-xl bg-slate-50 p-4">
-                  <p className="text-sm text-slate-500">{label}</p>
-                  <p className={`mt-1 text-2xl font-bold ${color}`}>{count}</p>
-                </div>
-              ))}
-            </div>
-            {importResult.rows.some((row) => row.status === "failed") && (
-              <div className="mt-4 max-h-56 overflow-y-auto rounded-xl border border-red-100">
-                {importResult.rows.filter((row) => row.status === "failed").map((row) => (
-                  <p key={row.rowNumber} className="border-b border-red-50 px-4 py-2 text-sm text-red-700">
-                    Row {row.rowNumber}: {row.message}
-                  </p>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
 
         <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <div className="overflow-x-auto">
@@ -605,16 +726,19 @@ function Employees() {
               </button>
             </div>
 
-            <form onSubmit={addEmployee} className="grid gap-4 sm:grid-cols-2">
+            <form noValidate onSubmit={addEmployee} className="grid gap-4 sm:grid-cols-2">
               <label className="block text-sm font-semibold text-slate-700">
                 Employee ID (optional)
                 <input
                   name="employeeId"
                   value={form.employeeId}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("employeeId")}
                   placeholder="EMP001"
+                  aria-invalid={Boolean(formErrors.employeeId)}
+                  aria-describedby={formErrors.employeeId ? "employeeId-error" : undefined}
                 />
+                <FieldError errors={formErrors} name="employeeId" />
               </label>
 
               <label className="block text-sm font-semibold text-slate-700">
@@ -624,9 +748,12 @@ function Employees() {
                   name="name"
                   value={form.name}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("name")}
                   placeholder="Employee name"
+                  aria-invalid={Boolean(formErrors.name)}
+                  aria-describedby={formErrors.name ? "name-error" : undefined}
                 />
+                <FieldError errors={formErrors} name="name" />
               </label>
 
               <label className="block text-sm font-semibold text-slate-700">
@@ -637,44 +764,85 @@ function Employees() {
                   name="email"
                   value={form.email}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("email")}
                   placeholder="employee@example.com"
+                  aria-invalid={Boolean(formErrors.email)}
+                  aria-describedby={formErrors.email ? "email-error" : undefined}
                 />
+                <FieldError errors={formErrors} name="email" />
               </label>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block text-sm font-semibold text-slate-700">
+                Phone number
+                <input
+                  required
+                  type="tel"
+                  name="phone"
+                  value={form.phone}
+                  onChange={updateForm}
+                  className={fieldClass("phone")}
+                  placeholder="+94 77 123 4567"
+                  aria-invalid={Boolean(formErrors.phone)}
+                  aria-describedby={formErrors.phone ? "phone-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="phone" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Personal email (optional)
+                <input
+                  type="email"
+                  name="personalEmail"
+                  value={form.personalEmail}
+                  onChange={updateForm}
+                  className={fieldClass("personalEmail")}
+                  aria-invalid={Boolean(formErrors.personalEmail)}
+                  aria-describedby={formErrors.personalEmail ? "personalEmail-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="personalEmail" />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2 sm:col-span-2">
                 <label className="block text-sm font-semibold text-slate-700">
                   Role
                   <select
+                    required
                     name="role"
                     value={form.role}
                     onChange={updateForm}
-                    className={inputClassName}
+                    className={fieldClass("role")}
+                    aria-invalid={Boolean(formErrors.role)}
+                    aria-describedby={formErrors.role ? "role-error" : undefined}
                   >
                     {[...new Set(["Employee", ...employeeOptions.roles])].map((role) => (
                       <option key={role}>{role}</option>
                     ))}
                   </select>
+                  <FieldError errors={formErrors} name="role" />
                 </label>
 
                 <label className="block text-sm font-semibold text-slate-700">
                   Department
                   <select
+                    required
                     name="department"
                     value={form.department}
                     onChange={updateForm}
-                    className={inputClassName}
+                    className={fieldClass("department")}
+                    aria-invalid={Boolean(formErrors.department)}
+                    aria-describedby={formErrors.department ? "department-error" : undefined}
                   >
                     {[...new Set([form.department, ...employeeOptions.departments].filter(Boolean))].map((department) => (
                       <option key={department}>{department}</option>
                     ))}
                   </select>
+                  <FieldError errors={formErrors} name="department" />
                 </label>
               </div>
 
               <div className="sm:col-span-2">
                 <h3 className="font-semibold text-slate-800">Employment and bank details</h3>
-                <p className="mt-1 text-xs text-slate-500">Bank information is required for new employee records.</p>
+                <p className="mt-1 text-xs text-slate-500">Bank codes are required only where the country-specific payment workflow needs them.</p>
               </div>
 
               <label className="block text-sm font-semibold text-slate-700">
@@ -684,13 +852,214 @@ function Employees() {
                   name="countryCode"
                   value={form.countryCode}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("countryCode")}
+                  aria-invalid={Boolean(formErrors.countryCode)}
+                  aria-describedby={formErrors.countryCode ? "countryCode-error" : undefined}
                 >
                   {employeeOptions.countries.map((country) => (
                     <option key={country.code} value={country.code}>{country.name}</option>
                   ))}
                 </select>
+                <FieldError errors={formErrors} name="countryCode" />
               </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Designation
+                <input
+                  required
+                  maxLength={100}
+                  name="designation"
+                  value={form.designation}
+                  onChange={updateForm}
+                  className={fieldClass("designation")}
+                  aria-invalid={Boolean(formErrors.designation)}
+                  aria-describedby={formErrors.designation ? "designation-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="designation" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Title (optional)
+                <select name="title" value={form.title} onChange={updateForm} className={inputClassName}>
+                  <option value="">Not set</option>
+                  {["Mr.", "Ms.", "Mrs.", "Miss", "Dr."].map((title) => <option key={title}>{title}</option>)}
+                </select>
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Assigned team lead (optional)
+                <select name="assignedTeamLead" value={form.assignedTeamLead} onChange={updateForm} className={inputClassName}>
+                  {[...new Set(["Not assigned", ...employeeOptions.assignedTeamLeads])].map((teamLead) => (
+                    <option key={teamLead}>{teamLead}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Joining date
+                <input
+                  required
+                  type="date"
+                  name="joiningDate"
+                  value={form.joiningDate}
+                  onChange={updateForm}
+                  className={fieldClass("joiningDate")}
+                  aria-invalid={Boolean(formErrors.joiningDate)}
+                  aria-describedby={formErrors.joiningDate ? "joiningDate-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="joiningDate" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Last working day (optional)
+                <input type="date" name="lastWorkingDate" value={form.lastWorkingDate} onChange={updateForm} className={fieldClass("lastWorkingDate")} aria-invalid={Boolean(formErrors.lastWorkingDate)} aria-describedby={formErrors.lastWorkingDate ? "lastWorkingDate-error" : undefined} />
+                <FieldError errors={formErrors} name="lastWorkingDate" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Date of birth (optional)
+                <input type="date" max={new Date().toISOString().slice(0, 10)} name="dateOfBirth" value={form.dateOfBirth} onChange={updateForm} className={fieldClass("dateOfBirth")} aria-invalid={Boolean(formErrors.dateOfBirth)} aria-describedby={formErrors.dateOfBirth ? "dateOfBirth-error" : undefined} />
+                <FieldError errors={formErrors} name="dateOfBirth" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                National ID (optional)
+                <input maxLength={50} name="nationalId" value={form.nationalId} onChange={updateForm} className={inputClassName} />
+              </label>
+
+              <div className="border-t border-slate-200 pt-4 sm:col-span-2">
+                <h3 className="font-semibold text-slate-800">Address</h3>
+              </div>
+
+              <label className="block text-sm font-semibold text-slate-700 sm:col-span-2">
+                Address
+                <textarea
+                  required
+                  maxLength={250}
+                  rows={2}
+                  name="address"
+                  value={form.address}
+                  onChange={updateForm}
+                  className={fieldClass("address")}
+                  aria-invalid={Boolean(formErrors.address)}
+                  aria-describedby={formErrors.address ? "address-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="address" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                City
+                <input
+                  required
+                  maxLength={100}
+                  name="city"
+                  value={form.city}
+                  onChange={updateForm}
+                  className={fieldClass("city")}
+                  aria-invalid={Boolean(formErrors.city)}
+                  aria-describedby={formErrors.city ? "city-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="city" />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                Country
+                <input
+                  required
+                  maxLength={100}
+                  name="country"
+                  value={form.country}
+                  onChange={updateForm}
+                  className={fieldClass("country")}
+                  aria-invalid={Boolean(formErrors.country)}
+                  aria-describedby={formErrors.country ? "country-error" : undefined}
+                />
+                <FieldError errors={formErrors} name="country" />
+              </label>
+
+              {form.countryCode === "LK" ? (
+                <label className="block text-sm font-semibold text-slate-700">
+                  Postal code
+                  <input
+                    required
+                    inputMode="numeric"
+                    maxLength={5}
+                    name="postalCode"
+                    value={form.postalCode}
+                    onChange={updateForm}
+                    className={fieldClass("postalCode")}
+                    aria-invalid={Boolean(formErrors.postalCode)}
+                    aria-describedby={formErrors.postalCode ? "postalCode-error" : undefined}
+                  />
+                  <FieldError errors={formErrors} name="postalCode" />
+                </label>
+              ) : (
+                <label className="block text-sm font-semibold text-slate-700">
+                  PIN code
+                  <input
+                    required
+                    inputMode="numeric"
+                    maxLength={6}
+                    name="pinCode"
+                    value={form.pinCode}
+                    onChange={updateForm}
+                    className={fieldClass("pinCode")}
+                    aria-invalid={Boolean(formErrors.pinCode)}
+                    aria-describedby={formErrors.pinCode ? "pinCode-error" : undefined}
+                  />
+                  <FieldError errors={formErrors} name="pinCode" />
+                </label>
+              )}
+              {isImportOpen && canAddEmployee && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-slate-900/50 p-4">
+                  <div className="my-6 max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-slate-50 p-4 shadow-xl sm:p-6">
+                    <div className="mb-4 flex justify-end">
+                      <button type="button" onClick={() => setIsImportOpen(false)} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-white">Close</button>
+                    </div>
+                    <CsvImportPanel
+                      title="Import employees"
+                      description="File upload, spreadsheet paste and manual rows all use the same HR-authorized employee creation and duplicate checks."
+                      columns={employeeImportColumns}
+                      requiredHeaderGroups={employeeImportRequiredHeaders}
+                      validateRow={validateEmployeeImportRow}
+                      templateName="employee-import-template.csv"
+                      sampleRow={{
+                        employeeId: "",
+                        name: "Example Employee",
+                        email: "example.employee@example.test",
+                        role: "Employee",
+                        department: "Operations",
+                        countryOfEmployment: "Sri Lanka",
+                        countryCode: "LK",
+                        address: "123 Example Street",
+                        city: "Colombo",
+                        country: "Sri Lanka",
+                        postalCode: "00100",
+                        pinCode: "",
+                        phone: "+94 77 123 4567",
+                        personalEmail: "example.personal@example.test",
+                        dateOfBirth: "",
+                        nationalId: "",
+                        bankName: "People's Bank",
+                        otherBankName: "",
+                        accountHolderName: "Example Employee",
+                        accountNumber: "1234567890",
+                        bankBranch: "Colombo",
+                        bankCode: "",
+                        bankBranchCode: "",
+                        micrCode: "",
+                        ifscCode: "",
+                        joiningDate: "2026-01-01",
+                        lastWorkingDate: "",
+                        assignedTeamLead: "Not assigned",
+                        title: "",
+                        designation: "Coordinator",
+                      }}
+                      onImport={importEmployeeContent}
+                    />
+                  </div>
+                </div>
+              )}
 
               <label className="block text-sm font-semibold text-slate-700">
                 Bank
@@ -699,12 +1068,15 @@ function Employees() {
                   name="bankName"
                   value={form.bankName}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("bankName")}
+                  aria-invalid={Boolean(formErrors.bankName)}
+                  aria-describedby={formErrors.bankName ? "bankName-error" : undefined}
                 >
                   <option value="">Select a bank</option>
                   {banks.map((bank) => <option key={bank}>{bank}</option>)}
                   <option value={OTHER_BANK}>{OTHER_BANK}</option>
                 </select>
+                <FieldError errors={formErrors} name="bankName" />
               </label>
 
               {form.bankName === OTHER_BANK && (
@@ -716,9 +1088,12 @@ function Employees() {
                     name="otherBankName"
                     value={form.otherBankName}
                     onChange={updateForm}
-                    className={inputClassName}
+                    className={fieldClass("otherBankName")}
                     placeholder="Enter the bank name"
+                    aria-invalid={Boolean(formErrors.otherBankName)}
+                    aria-describedby={formErrors.otherBankName ? "otherBankName-error" : undefined}
                   />
+                  <FieldError errors={formErrors} name="otherBankName" />
                 </label>
               )}
 
@@ -730,8 +1105,11 @@ function Employees() {
                   name="accountHolderName"
                   value={form.accountHolderName}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("accountHolderName")}
+                  aria-invalid={Boolean(formErrors.accountHolderName)}
+                  aria-describedby={formErrors.accountHolderName ? "accountHolderName-error" : undefined}
                 />
+                <FieldError errors={formErrors} name="accountHolderName" />
               </label>
 
               <label className="block text-sm font-semibold text-slate-700">
@@ -745,8 +1123,11 @@ function Employees() {
                   name="accountNumber"
                   value={form.accountNumber}
                   onChange={updateForm}
-                  className={inputClassName}
+                  className={fieldClass("accountNumber")}
+                  aria-invalid={Boolean(formErrors.accountNumber)}
+                  aria-describedby={formErrors.accountNumber ? "accountNumber-error" : undefined}
                 />
+                <FieldError errors={formErrors} name="accountNumber" />
               </label>
 
               <label className="block text-sm font-semibold text-slate-700">
@@ -761,6 +1142,11 @@ function Employees() {
               </label>
 
               <label className="block text-sm font-semibold text-slate-700">
+                Bank code (if applicable)
+                <input maxLength={20} name="bankCode" value={form.bankCode} onChange={updateForm} className={inputClassName} />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
                 {form.countryCode === "IN" ? "Branch code" : "Branch code (if applicable)"}
                 <input
                   maxLength={20}
@@ -769,6 +1155,11 @@ function Employees() {
                   onChange={updateForm}
                   className={inputClassName}
                 />
+              </label>
+
+              <label className="block text-sm font-semibold text-slate-700">
+                MICR code (if applicable)
+                <input maxLength={20} name="micrCode" value={form.micrCode} onChange={updateForm} className={inputClassName} />
               </label>
 
               {form.countryCode === "IN" && (
@@ -780,22 +1171,14 @@ function Employees() {
                     name="ifscCode"
                     value={form.ifscCode}
                     onChange={updateForm}
-                    className={inputClassName}
+                    className={fieldClass("ifscCode")}
                     placeholder="e.g. HDFC0001234"
+                    aria-invalid={Boolean(formErrors.ifscCode)}
+                    aria-describedby={formErrors.ifscCode ? "ifscCode-error" : undefined}
                   />
+                  <FieldError errors={formErrors} name="ifscCode" />
                 </label>
               )}
-
-              <label className="block text-sm font-semibold text-slate-700">
-                Joining date
-                <input
-                  type="date"
-                  name="joiningDate"
-                  value={form.joiningDate}
-                  onChange={updateForm}
-                  className={inputClassName}
-                />
-              </label>
 
               <div className="flex justify-end gap-3 pt-3 sm:col-span-2">
                 <button
@@ -818,6 +1201,13 @@ function Employees() {
         </div>
       )}
     </UserLayout>
+    {isBulkImportOpen && (
+      <PersonnelBulkImport
+        onImported={() => { setIsBulkImportOpen(false); refreshEmployees(); }}
+        onClose={() => setIsBulkImportOpen(false)}
+      />
+    )}
+    </>
   );
 }
 

@@ -6,6 +6,10 @@ const API = `${API_BASE}/payroll`;
 // Employees with their payroll record for the month (period = "YYYY-MM").
 export const getPayroll = (period) => axios.get(API, { params: { period } });
 export const savePayrollRecord = (employeeId, period, data) => axios.put(`${API}/${employeeId}/${period}`, data);
+export const confirmPayrollPayment = (employeeId, period, data) =>
+  axios.post(`${API}/${employeeId}/${period}/payment`, data);
+export const getInternalBankExport = (period, countryCode) =>
+  axios.get(`${API}/bank-export`, { params: { period, countryCode } });
 // Stores the payslip PDF behind a private link; returns { token }.
 export const sharePayslip = (employeeId, period, pdf) => axios.post(`${API}/${employeeId}/${period}/share`, { pdf });
 export const sharedPayslipUrl = (token) => `${API_BASE}/payslips/${token}`;

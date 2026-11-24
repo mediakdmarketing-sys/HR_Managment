@@ -13,6 +13,19 @@ export const listAttendance = async (req, res) => {
   }
 };
 
+export const listMonthlyAttendanceSummaries = async (req, res) => {
+  try {
+    const records = await attendanceService.getMonthlyAttendanceSummaries();
+    return res.json({ success: true, data: records });
+  } catch (error) {
+    console.error("Could not load monthly attendance summaries.", error);
+    return res.status(500).json({
+      success: false,
+      message: "Could not load monthly attendance summaries.",
+    });
+  }
+};
+
 export const importAttendance = async (req, res) => {
   try {
     const result = await attendanceService.importAttendanceRecords(

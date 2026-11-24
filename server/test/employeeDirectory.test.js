@@ -3,6 +3,7 @@ import { test } from "node:test";
 import authorize from "../middleware/roleMiddleware.js";
 import { makeEmployeeDirectoryPersistence } from "../services/employeeDirectoryPersistence.js";
 import {
+  EMPLOYEE_CSV_HEADERS,
   isActiveHrRecord,
   isRecentlyAuthenticated,
   maskAccountNumber,
@@ -19,13 +20,26 @@ const employeeInput = (overrides = {}) => ({
   department: "Operations",
   countryCode: "LK",
   countryOfEmployment: "Sri Lanka",
+  address: "12 Main Street",
+  city: "Colombo",
+  country: "Sri Lanka",
+  postalCode: "00100",
+  pinCode: "",
+  phone: "+94 77 123 4567",
+  personalEmail: "",
+  dateOfBirth: "",
+  nationalId: "",
   bankName: "People's Bank",
   accountHolderName: "Ravi Perera",
   accountNumber: "1234567890",
   bankBranch: "Colombo",
+  bankCode: "",
   bankBranchCode: "001",
+  micrCode: "",
   ifscCode: "",
   joiningDate: "2025-01-15",
+  lastWorkingDate: "",
+  designation: "HR Associate",
   ...overrides,
 });
 
@@ -97,12 +111,7 @@ const createMemoryFirestore = () => {
   return firestore;
 };
 
-const validCsvHeaders = [
-  "employeeId", "name", "email", "role", "department",
-  "countryOfEmployment", "countryCode", "bankName", "otherBankName",
-  "accountHolderName", "accountNumber", "bankBranch", "bankBranchCode",
-  "ifscCode", "joiningDate",
-].join(",");
+const validCsvHeaders = EMPLOYEE_CSV_HEADERS.join(",");
 
 const csvEmployee = (overrides = {}) => ({
   employeeId: "",
@@ -112,35 +121,32 @@ const csvEmployee = (overrides = {}) => ({
   department: "Operations",
   countryOfEmployment: "Sri Lanka",
   countryCode: "LK",
+  address: "12 Main Street",
+  city: "Colombo",
+  country: "Sri Lanka",
+  postalCode: "00100",
+  pinCode: "",
+  phone: "+94 77 123 4567",
+  personalEmail: "",
+  dateOfBirth: "",
+  nationalId: "",
   bankName: "People's Bank",
   otherBankName: "",
   accountHolderName: "Ravi Perera",
   accountNumber: "1234567890",
   bankBranch: "",
+  bankCode: "",
   bankBranchCode: "",
+  micrCode: "",
   ifscCode: "",
   joiningDate: "2025-01-15",
+  lastWorkingDate: "",
+  designation: "HR Associate",
   ...overrides,
 });
 
 const csvRow = (employee) =>
-  [
-    employee.employeeId,
-    employee.name,
-    employee.email,
-    employee.role,
-    employee.department,
-    employee.countryOfEmployment,
-    employee.countryCode,
-    employee.bankName,
-    employee.otherBankName,
-    employee.accountHolderName,
-    employee.accountNumber,
-    employee.bankBranch,
-    employee.bankBranchCode,
-    employee.ifscCode,
-    employee.joiningDate,
-  ]
+  EMPLOYEE_CSV_HEADERS.map((header) => employee[header] || "")
     .map((value) => {
       const text = String(value ?? "");
       return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
@@ -156,6 +162,7 @@ test("manual directory creation is transactional and never creates an Auth accou
   assert.equal(created.status, "Active");
   assert.equal(created.uid, undefined);
   assert.equal(database.collections.get("employees").get("EMP001").accountNumber, "1234567890");
+  assert.equal(database.collections.get("employees").get("EMP001").postalCode, "00100");
   assert.deepEqual(
     [...database.collections.keys()].sort(),
     ["employeeCounters", "employeeEmailIndexes", "employees"],
@@ -192,7 +199,7 @@ test("rejects invalid personal, joining-date, country and country-specific bank 
   assert.throws(() => validateEmployeeInput(employeeInput({ email: "not-an-email" })), /valid employee email/);
   assert.throws(() => validateEmployeeInput(employeeInput({ joiningDate: "2025-02-30" })), /valid YYYY-MM-DD/);
   assert.throws(
-    () => validateEmployeeInput(employeeInput({ countryCode: "IN", countryOfEmployment: "India", ifscCode: "" })),
+    () => validateEmployeeInput(employeeInput({ countryCode: "IN", countryOfEmployment: "India", postalCode: "", pinCode: "560001", ifscCode: "" })),
     /IFSC code is required/,
   );
   assert.throws(
@@ -203,6 +210,20 @@ test("rejects invalid personal, joining-date, country and country-specific bank 
     () => validateEmployeeInput(employeeInput({ countryCode: "IN", countryOfEmployment: "Sri Lanka" })),
     /do not match/,
   );
+  assert.throws(
+    () => validateEmployeeInput(employeeInput({ postalCode: "" })),
+    /five-digit Sri Lankan postal code/,
+  );
+  assert.throws(
+    () => validateEmployeeInput(employeeInput({ pinCode: "11000", countryCode: "IN", countryOfEmployment: "India", postalCode: "", ifscCode: "HDFC0001234" })),
+    /six-digit Indian PIN code/,
+  );
+  assert.equal(
+    validateEmployeeInput(employeeInput({ bankCode: "", bankBranchCode: "", micrCode: "" })).bankBranchCode,
+    "",
+  );
+  assert.throws(() => validateEmployeeInput(employeeInput({ phone: "" })), /phone number is required/);
+  assert.throws(() => validateEmployeeInput(employeeInput({ designation: "" })), /Designation is required/);
 });
 
 test("CSV import supports quoted commas, partial success, duplicate detection and safe row errors", async () => {

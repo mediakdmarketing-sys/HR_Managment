@@ -1,9 +1,16 @@
 import { randomBytes, randomInt } from "node:crypto";
 import { firestore } from "../config/firebase.js";
+import {
+  calculateLegacyPayrollTotal,
+  calculateWorkbookPayroll,
+  workbookFieldsPresent,
+} from "../utils/payrollCalculations.js";
+import { maskAccountNumber } from "../utils/employeeDirectory.js";
 
 const employees = firestore.collection("employees");
 // One document per employee per month, ID "<employeeId>_<YYYY-MM>".
 const records = firestore.collection("payrollRecords");
+const attendanceMonthlySummaries = firestore.collection("attendanceMonthlySummaries");
 // payslipNumbers/<employeeId> holds the employee's number; payslipCodes/<prefix> holds the
 // 4-digit codes already used in that department, so two people never share one.
 const payslipNumbers = firestore.collection("payslipNumbers");
@@ -15,14 +22,7 @@ const SHARE_DAYS = 30;
 export const COMPANY_CODE = process.env.PAYSLIP_COMPANY_CODE || "999";
 export const DEFAULT_RATES = { fullDayRate: 1000, halfDayRate: 500, laggingHourRate: 100 };
 
-export const calculateTotal = (entry) =>
-  Math.round(
-    (entry.fullDays * entry.fullDayRate +
-      entry.halfDays * entry.halfDayRate +
-      entry.laggingHours * entry.laggingHourRate +
-      entry.increment) *
-      100,
-  ) / 100;
+export const calculateTotal = calculateLegacyPayrollTotal;
 
 const departmentLetters = (department) =>
   String(department || "").replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase().padEnd(2, "X");
@@ -38,6 +38,8 @@ const employeeSummary = (snapshot) => {
     designation: data.designation || data.role || "Employee",
     department: data.department || "Unassigned",
     status: data.status,
+    countryCode: data.countryCode || "",
+    countryOfEmployment: data.countryOfEmployment || "",
   };
 };
 
@@ -82,19 +84,24 @@ const rateFields = (entry) => ({
 // record and the rates and increment to start from: the employee's most recent earlier
 // month, so a raise carries into the following months, or the company defaults.
 export const listPayroll = async (period) => {
-  const [employeeSnapshot, recordSnapshot, numberSnapshot] = await Promise.all([
+  const [employeeSnapshot, recordSnapshot, numberSnapshot, attendanceSnapshot] = await Promise.all([
     employees.get(),
     records.get(),
     payslipNumbers.get(),
+    attendanceMonthlySummaries.get(),
   ]);
   const allRecords = recordSnapshot.docs.map((doc) => doc.data());
   const numbers = new Map(numberSnapshot.docs.map((doc) => [doc.id, doc.data().number]));
+  const attendanceSummaries = attendanceSnapshot.docs.map((doc) => doc.data());
 
   return employeeSnapshot.docs
     .map(employeeSummary)
     .map((employee) => {
       const ownRecords = allRecords.filter((record) => record.employeeId === employee.id);
       const record = ownRecords.find((item) => item.period === period) || null;
+      const attendanceSummary = attendanceSummaries.find(
+        (summary) => summary.employeeId === employee.id && summary.month === period,
+      ) || null;
       const previous = ownRecords
         .filter((item) => item.period < period)
         .sort((a, b) => b.period.localeCompare(a.period))[0];
@@ -102,6 +109,7 @@ export const listPayroll = async (period) => {
         ...employee,
         payslipNumber: record?.payslipNumber || numbers.get(employee.id) || "",
         record,
+        attendanceSummary,
         suggested: previous ? rateFields(previous) : { ...DEFAULT_RATES, increment: 0 },
       };
     })
@@ -110,26 +118,150 @@ export const listPayroll = async (period) => {
 };
 
 export const saveRecord = async (employeeId, period, entry, user) => {
-  const employeeSnapshot = await employees.doc(employeeId).get();
-  if (!employeeSnapshot.exists) return null;
-  const employee = employeeSummary(employeeSnapshot);
-  const payslipNumber = await assignPayslipNumber(employee);
-
-  const reference = records.doc(`${employeeId}_${period}`);
-  const existing = await reference.get();
-  const now = new Date().toISOString();
-  const record = {
+  const recordData = {
     ...entry,
     employeeId,
     period,
-    payslipNumber,
+    legacyCurrency: "LKR",
     total: calculateTotal(entry),
     updatedBy: user.name || user.email || "",
-    updatedAt: now,
-    createdAt: existing.data()?.createdAt || now,
+    updatedAt: new Date().toISOString(),
   };
-  await reference.set(record);
+  if (workbookFieldsPresent(entry)) {
+    const breakdown = calculateWorkbookPayroll(entry);
+    if (breakdown.error) {
+      const error = new Error(breakdown.error);
+      error.statusCode = 400;
+      throw error;
+    }
+    recordData.workbookBreakdown = breakdown.value;
+  } else {
+    delete recordData.workbookBreakdown;
+  }
+
+  const employeeSnapshot = await employees.doc(employeeId).get();
+  if (!employeeSnapshot.exists) return null;
+  const employee = employeeSummary(employeeSnapshot);
+  const reference = records.doc(`${employeeId}_${period}`);
+  const existing = await reference.get();
+  if (existing.data()?.paymentStatus === "Paid") {
+    const error = new Error("Paid payroll records cannot be edited.");
+    error.statusCode = 409;
+    throw error;
+  }
+  const payslipNumber = await assignPayslipNumber(employee);
+  recordData.payslipNumber = payslipNumber;
+  const now = recordData.updatedAt;
+  await firestore.runTransaction(async (transaction) => {
+    const existing = await transaction.get(reference);
+    const existingRecord = existing.data() || {};
+    if (existingRecord.paymentStatus === "Paid") {
+      const error = new Error("Paid payroll records cannot be edited.");
+      error.statusCode = 409;
+      throw error;
+    }
+    transaction.set(reference, {
+      ...existingRecord,
+      ...recordData,
+      paymentStatus: existingRecord.paymentStatus || "Unpaid",
+      paymentHistory: existingRecord.paymentHistory || [],
+      createdAt: existingRecord.createdAt || now,
+    });
+  });
+  const record = { ...recordData, paymentStatus: "Unpaid" };
   return record;
+};
+
+export const confirmPayment = async ({ employeeId, period, user, reference = "" }) => {
+  const document = records.doc(`${employeeId}_${period}`);
+  const now = new Date().toISOString();
+  return firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(document);
+    if (!snapshot.exists) {
+      const error = new Error("Payroll must be created before payment can be confirmed.");
+      error.statusCode = 404;
+      throw error;
+    }
+    const current = snapshot.data();
+    if (current.paymentStatus === "Paid") {
+      const error = new Error("This payroll is already marked Paid; duplicate payment confirmation is blocked.");
+      error.statusCode = 409;
+      throw error;
+    }
+    const paymentEvent = {
+      status: "Paid",
+      confirmedAt: now,
+      confirmedBy: user.name || user.email || user.id || "HR",
+      reference: String(reference || "").trim(),
+      method: "Manual external confirmation",
+    };
+    const next = {
+      ...current,
+      paymentStatus: "Paid",
+      paymentHistory: [...(Array.isArray(current.paymentHistory) ? current.paymentHistory : []), paymentEvent],
+      paymentUpdatedAt: now,
+      paymentUpdatedBy: paymentEvent.confirmedBy,
+    };
+    transaction.set(document, next);
+    return next;
+  });
+};
+
+export const prepareBankExport = async ({ period, countryCode }) => {
+  const employeeSnapshot = await employees.get();
+  const payrollSnapshot = await records.get();
+  const employeesById = new Map(
+    employeeSnapshot.docs.map((document) => [document.id, { id: document.id, ...document.data() }]),
+  );
+  const payrollRows = payrollSnapshot.docs
+    .map((document) => ({ id: document.id, ...document.data() }))
+    .filter((record) => record.period === period && (record.paymentStatus || "Unpaid") === "Unpaid");
+  return payrollRows
+    .filter((record) => employeesById.get(record.employeeId)?.countryCode === countryCode)
+    .map((record) => {
+      const employee = employeesById.get(record.employeeId);
+      const accountNumber = String(employee.accountNumber || "").replace(/[\s-]/g, "");
+      const errors = [];
+      if (!employee.bankName) errors.push("Bank name is missing.");
+      if (!employee.accountHolderName) errors.push("Account holder name is missing.");
+      if (!/^\d{6,20}$/.test(accountNumber)) errors.push("Account number is missing or invalid.");
+      if (countryCode === "IN" && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(String(employee.ifscCode || "").trim().toUpperCase())) {
+        errors.push("A valid IFSC code is required.");
+      }
+      const currency = record.workbookBreakdown?.currency || record.currency || record.legacyCurrency || "";
+      if (!/^[A-Z]{3}$/.test(currency)) errors.push("Payroll currency is missing or invalid.");
+      const amount = record.workbookBreakdown
+        ? record.workbookBreakdown.netPay
+        : record.total;
+      if (record.workbookBreakdown && (amount === null || amount === undefined)) {
+        errors.push("Net pay is pending an HR policy decision.");
+      }
+      if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) {
+        errors.push("Payroll amount is unavailable.");
+      }
+      return {
+        employeeId: employee.id,
+        employeeName: employee.name || "",
+        employmentCountry: employee.countryOfEmployment || "",
+        currency,
+        period,
+        amount: amount ?? "",
+        paymentStatus: "Unpaid",
+        bankName: employee.bankName || "",
+        bankBranch: employee.bankBranch || "",
+        bankCode: employee.bankCode || "",
+        branchCode: employee.bankBranchCode || "",
+        ifscCode: countryCode === "IN" ? String(employee.ifscCode || "").trim().toUpperCase() : "",
+        accountHolderName: employee.accountHolderName || "",
+        accountNumber: errors.some((error) => error.includes("Account number"))
+          ? ""
+          : accountNumber,
+        accountNumberMasked: maskAccountNumber(accountNumber),
+        validationStatus: errors.length ? "Needs review" : "Internal field checks passed; not bank-ready",
+        validationErrors: errors,
+        paymentReference: "",
+      };
+    });
 };
 
 // Stores the PDF behind a new random link, replacing any earlier link for the same month.

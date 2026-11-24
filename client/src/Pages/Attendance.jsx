@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   CircleCheckBig,
   Coffee,
-  FileUp,
   History,
   LogIn,
   LogOut,
@@ -14,15 +13,110 @@ import mockEmployees from "../assets/mockEmployees";
 import { getUser } from "../utils/auth";
 import {
   getAttendanceRecords,
+  getMonthlyAttendanceSummaries,
   importAttendanceRecords,
 } from "../api/attendanceApi";
 import { parseAttendanceCsv } from "../utils/attendanceCsv";
+import CsvImportPanel from "../components/CsvImportPanel";
 
 const PAGE_SIZE = 10;
 const REQUIRED_WORK_SECONDS = 8 * 60 * 60;
 const SAMPLE_WORK_SECONDS = 4 * 60 * 60 + 34 * 60 + 12;
 const inputClassName =
   "mt-1 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100";
+
+const legacyAttendanceColumns = [
+  { key: "employeeId", header: "employeeId", requiredNote: "Employee ID or email is required" },
+  { key: "name", header: "name" },
+  { key: "email", header: "email", requiredNote: "Employee ID or email is required" },
+  { key: "department", header: "department" },
+  { key: "status", header: "status", required: true },
+  { key: "workingHours", header: "workingHours", required: true },
+  { key: "totalBreakTime", header: "totalBreakTime" },
+];
+
+const dailyAttendanceColumns = [
+  { key: "employeeId", header: "Employee ID", requiredNote: "Employee ID or Email is required" },
+  { key: "email", header: "Email", requiredNote: "Employee ID or Email is required" },
+  { key: "name", header: "Employee" },
+  { key: "department", header: "Department" },
+  { key: "date", header: "Date", required: true },
+  { key: "day", header: "Day", required: true },
+  { key: "clockIn", header: "Clock In" },
+  { key: "clockOut", header: "Clock Out" },
+  { key: "status", header: "Status", required: true },
+  { key: "leave", header: "Leave" },
+  { key: "hours", header: "Hours" },
+  { key: "break", header: "Break" },
+  { key: "productive", header: "Productive" },
+];
+
+const monthlyAttendanceColumns = [
+  { key: "employeeId", header: "Employee ID", requiredNote: "Employee ID or Email is required" },
+  { key: "employee", header: "Employee" },
+  { key: "email", header: "Email", requiredNote: "Employee ID or Email is required" },
+  { key: "department", header: "Department" },
+  { key: "month", header: "Month", required: true },
+  { key: "daysPresent", header: "Days Present", required: true },
+  { key: "totalHours", header: "Total Hours", required: true, requiredNote: "Required; preserved as source text without conversion" },
+  { key: "worked", header: "Worked", required: true },
+  { key: "break", header: "Break", required: true },
+  { key: "idle", header: "Idle", required: true },
+  { key: "flaggedDays", header: "Flagged Days", required: true },
+  { key: "fullDays", header: "Full Days", required: true },
+  { key: "halfDays", header: "Half Days", required: true },
+  { key: "otherDays", header: "Other Days", required: true },
+  { key: "otherHours", header: "Other Hours", required: true, requiredNote: "Required; preserved as source text without conversion" },
+  { key: "basePayUsd", header: "Base Pay (USD)", required: true },
+  { key: "bonusUsd", header: "Bonus (USD)", required: true },
+  { key: "netPayUsd", header: "Net Pay (USD)", required: true },
+  { key: "daysWithoutRate", header: "Days Without Rate", required: true },
+  { key: "synced", header: "Synced", required: true },
+];
+
+const validateLegacyAttendanceRow = (row) => {
+  const errors = [];
+  if (!row.employeeid && !row.email) errors.push("Employee ID or email is required.");
+  if (!row.status) errors.push("Status is required.");
+  if (!row.workinghours) errors.push("Working hours are required.");
+  return errors;
+};
+
+const validateDailyAttendanceRow = (row) => {
+  const errors = [];
+  if (!row.employeeid && !row.email) errors.push("Employee ID or email is required.");
+  if (!row.date || !/^\d{4}-\d{2}-\d{2}$/.test(row.date)) errors.push("Date must use YYYY-MM-DD.");
+  if (!row.day || !/^(mon|tue|wed|thu|fri|sat|sun)(?:day)?$/i.test(row.day)) errors.push("Day must be a weekday name.");
+  if (!row.status && !row.leave) errors.push("Status or leave value is required.");
+  for (const key of ["clockin", "clockout"]) {
+    if (row[key] && !/^(?:(?:[01]?\d|2[0-3]):[0-5]\d|(?:0?[1-9]|1[0-2]):[0-5]\d\s?(?:AM|PM)|(?:0?[1-9]|1[0-2])\.[0-5]\d\s?(?:AM|PM))$/i.test(row[key])) {
+      errors.push(`${key === "clockin" ? "Clock In" : "Clock Out"} must be a supported time (for example 08:30 or 8:30 AM).`);
+    }
+  }
+  for (const key of ["hours", "break", "productive"]) {
+    if (row[key] && !/^(?:\d+(?:\.\d+)?|\d{1,3}:[0-5]\d|\d+\s*h(?:\s*\d+\s*m)?|\d+\s*m|\d+\s*s)$/i.test(row[key])) {
+      errors.push(`${key} must use a numeric source value, H:MM, or a duration such as 8h 30m.`);
+    }
+  }
+  return errors;
+};
+
+const validateMonthlyAttendanceRow = (row) => {
+  const errors = [];
+  if (!row.employeeid && !row.email) errors.push("Employee ID or email is required.");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month || "")) errors.push("Month must use YYYY-MM.");
+  for (const key of ["dayspresent", "flaggeddays", "fulldays", "halfdays", "otherdays", "dayswithoutrate"]) {
+    if (!/^\d+$/.test(row[key] || "") || Number(row[key]) > 366) errors.push(`${key} must be a whole number from 0 to 366.`);
+  }
+  for (const key of ["totalhours", "otherhours", "basepayusd", "bonususd", "netpayusd"]) {
+    if (!/^\d+(?:\.\d+)?$/.test(row[key] || "")) errors.push(`${key} must be an unsigned numeric source value.`);
+  }
+  for (const key of ["worked", "break", "idle"]) {
+    if (!/^(?:\d+h(?:\s*\d+m)?|\d+m|\d+s)$/i.test(row[key] || "")) errors.push(`${key} must use a duration format such as 8h 30m or 0s.`);
+  }
+  if (!/^(true|false)$/i.test(row.synced || "")) errors.push("Synced must be true or false.");
+  return errors;
+};
 
 const breakRows = [
   { type: "Break", start: "10:15 AM", end: "10:30 AM", duration: "15m", status: "Completed" },
@@ -211,28 +305,32 @@ function EmployeeAttendance() {
 }
 
 function HrAttendance() {
-  const fileInputRef = useRef(null);
   const [attendance, setAttendance] = useState([]);
+  const [monthlySummaries, setMonthlySummaries] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isImporting, setIsImporting] = useState(false);
   const [departmentFilter, setDepartmentFilter] = useState("All departments");
   const [statusFilter, setStatusFilter] = useState("All statuses");
   const [currentPage, setCurrentPage] = useState(1);
-  const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
-  const [importSummary, setImportSummary] = useState("");
+  const [viewMode, setViewMode] = useState("daily");
+  const [importFormat, setImportFormat] = useState("legacy");
 
   useEffect(() => {
     let active = true;
     const loadAttendance = async () => {
       try {
-        const response = await getAttendanceRecords();
-        const records = response.data?.data;
-        if (!Array.isArray(records)) {
+        const [dailyResponse, monthlyResponse] = await Promise.all([
+          getAttendanceRecords(),
+          getMonthlyAttendanceSummaries(),
+        ]);
+        const dailyRecords = dailyResponse.data?.data;
+        const monthlyRecords = monthlyResponse.data?.data;
+        if (!Array.isArray(dailyRecords) || !Array.isArray(monthlyRecords)) {
           throw new Error("The server returned an invalid attendance response.");
         }
         if (!active) return;
-        setAttendance(records);
+        setAttendance(dailyRecords);
+        setMonthlySummaries(monthlyRecords);
         setLoadError("");
       } catch (loadError) {
         if (!active) return;
@@ -241,7 +339,6 @@ function HrAttendance() {
           loadError.message ||
           "Saved attendance could not be loaded.";
         setLoadError(message);
-        setError(message);
       } finally {
         if (active) setIsLoading(false);
       }
@@ -266,6 +363,16 @@ function HrAttendance() {
         return matchesDepartment && matchesStatus;
       }),
     [attendance, departmentFilter, statusFilter]
+  );
+
+  const filteredMonthlySummaries = useMemo(
+    () =>
+      monthlySummaries.filter(
+        (record) =>
+          departmentFilter === "All departments" ||
+          record.department === departmentFilter,
+      ),
+    [monthlySummaries, departmentFilter],
   );
 
   const totalPages = Math.max(
@@ -298,26 +405,10 @@ function HrAttendance() {
     setCurrentPage(1);
   };
 
-  const importCsv = async (event) => {
-    const [file] = event.target.files;
-    if (!file) return;
-
-    setError("");
-    setImportSummary("");
-    setIsImporting(true);
-    event.target.value = "";
-
-    let importedRecords;
-    try {
-      importedRecords = parseAttendanceCsv(await file.text());
-    } catch (parseError) {
-      setError(parseError.message || "The CSV file could not be read.");
-      setIsImporting(false);
-      return;
-    }
-
+  const importAttendanceContent = async (content) => {
+    const importedRecords = parseAttendanceCsv(content, importFormat);
     const totals = { imported: 0, duplicates: 0, skipped: 0, failed: 0 };
-    const issues = [];
+    const results = [];
     for (let start = 0; start < importedRecords.length; start += 500) {
       const batch = importedRecords.slice(start, start + 500);
       try {
@@ -327,9 +418,7 @@ function HrAttendance() {
           totals[key] += Number(result?.[key]) || 0;
         }
         for (const row of result?.results || []) {
-          if (row.status === "skipped" || row.status === "failed") {
-            issues.push(`Row ${row.rowNumber}: ${row.reason}`);
-          }
+          results.push({ ...row, message: row.reason || `Record ${row.status}.` });
         }
       } catch (importError) {
         totals.failed += batch.length;
@@ -337,17 +426,26 @@ function HrAttendance() {
           importError.response?.data?.message ||
           importError.message ||
           "The batch could not be submitted.";
-        issues.push(`Rows ${batch[0].rowNumber}-${batch[batch.length - 1].rowNumber}: ${message}`);
+        results.push(...batch.map((record) => ({
+          rowNumber: record.rowNumber,
+          status: "failed",
+          message,
+        })));
       }
     }
 
     try {
-      const response = await getAttendanceRecords();
-      const records = response.data?.data;
-      if (!Array.isArray(records)) {
+      const [dailyResponse, monthlyResponse] = await Promise.all([
+        getAttendanceRecords(),
+        getMonthlyAttendanceSummaries(),
+      ]);
+      const dailyRecords = dailyResponse.data?.data;
+      const monthlyRecords = monthlyResponse.data?.data;
+      if (!Array.isArray(dailyRecords) || !Array.isArray(monthlyRecords)) {
         throw new Error("The server returned an invalid attendance response.");
       }
-      setAttendance(records);
+      setAttendance(dailyRecords);
+      setMonthlySummaries(monthlyRecords);
       setLoadError("");
     } catch (loadError) {
       setLoadError(
@@ -355,23 +453,11 @@ function HrAttendance() {
           loadError.message ||
           "Saved attendance could not be reloaded.",
       );
-      issues.push(
-        `Saved records could not be reloaded: ${
-          loadError.response?.data?.message || loadError.message
-        }`,
-      );
     }
 
-    setImportSummary(
-      `${totals.imported} imported, ${totals.duplicates} duplicates, ${totals.skipped} skipped, ${totals.failed} failed.`,
-    );
-    if (issues.length > 0) {
-      const remaining = issues.length > 5 ? ` (and ${issues.length - 5} more)` : "";
-      setError(`${issues.slice(0, 5).join(" · ")}${remaining}`);
-    }
     setCurrentPage(1);
     clearFilters();
-    setIsImporting(false);
+    return { ...totals, results };
   };
 
   return (
@@ -405,8 +491,9 @@ function HrAttendance() {
               aria-label="Filter attendance by status"
             >
               <option>All statuses</option>
-              <option>Present</option>
-              <option>Absent</option>
+              {[...new Set(attendance.map((record) => record.attendanceStatus).filter(Boolean))].map((status) => (
+                <option key={status}>{status}</option>
+              ))}
             </select>
 
             <button
@@ -421,141 +508,240 @@ function HrAttendance() {
               Clear
             </button>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={importCsv}
-              disabled={isImporting || isLoading}
-              className="hidden"
-            />
-            <button
-              type="button"
-              disabled={isImporting || isLoading}
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
-            >
-              <FileUp size={18} />
-              {isImporting ? "Importing..." : "Import CSV"}
-            </button>
-
           </div>
           <p className="mt-3 text-xs text-slate-400">
             Showing: <span className="font-semibold">Firestore</span>
             {isLoading && <span> · Loading saved records...</span>}
           </p>
-          {importSummary && (
-            <p className="mt-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800" role="status">
-              Import results: {importSummary}
-            </p>
-          )}
-          {error && (
+          {loadError && (
             <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-              {error}
+              {loadError}
             </p>
           )}
         </section>
 
-        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px] text-left">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 text-center">
-                <tr>
-                  <th className="px-6 py-4 font-semibold">Employee ID</th>
-                  <th className="px-6 py-4 font-semibold">Name</th>
-                  <th className="px-6 py-4 font-semibold">Email</th>
-                  <th className="px-6 py-4 font-semibold">Department</th>
-                  <th className="px-6 py-4 font-semibold">Date</th>
-                  <th className="px-6 py-4 font-semibold">Attendance</th>
-                  <th className="px-6 py-4 font-semibold">Working hours</th>
-                  <th className="px-6 py-4 font-semibold">Total break time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-center">
-                {visibleAttendance.length > 0 ? (
-                  visibleAttendance.map((employee) => (
-                    <tr key={employee.id} className="transition hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {employee.employeeId || employee.id}
-                      </td>
-                      <td className="px-6 py-4 font-semibold text-slate-800 text-start">
-                        {employee.name || employee.employeeName}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-500 text-start">
-                        {employee.email || employee.employeeEmail}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {employee.department}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {employee.date || "—"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            employee.attendanceStatus === "Present"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-red-100 text-red-700"
-                          }`}
-                        >
-                          {employee.attendanceStatus}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {employee.workingHours}h
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {employee.totalBreakTime}h
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan="8"
-                      className="px-6 py-12 text-center text-sm text-slate-500"
-                    >
-                      {isLoading
-                        ? "Loading attendance records..."
-                        : loadError
-                          ? "Attendance records could not be loaded."
-                          : attendance.length === 0
-                            ? "No attendance records have been imported yet."
-                            : "No attendance records match your filters."}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>
-              Page {displayedPage} of {totalPages} · {filteredAttendance.length}{" "}
-              records
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={displayedPage === 1}
-                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-                className="rounded-lg px-3 py-2 font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-              >
-                ← Previous
-              </button>
-              <button
-                type="button"
-                disabled={displayedPage === totalPages}
-                onClick={() =>
-                  setCurrentPage((page) => Math.min(totalPages, page + 1))
-                }
-                className="rounded-lg px-3 py-2 font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
-              >
-                Next →
-              </button>
-            </div>
-          </div>
+        <section className="space-y-4">
+          <label className="block max-w-sm text-sm font-semibold text-slate-700">
+            CSV document format
+            <select
+              value={importFormat}
+              onChange={(event) => setImportFormat(event.target.value)}
+              disabled={isLoading}
+              className={inputClassName}
+            >
+              <option value="legacy">Existing attendance CSV</option>
+              <option value="daily">HR Portal daily attendance</option>
+              <option value="monthly">Payroll monthly summary CSV</option>
+            </select>
+          </label>
+          <CsvImportPanel
+            key={importFormat}
+            title={
+              importFormat === "monthly"
+                ? "Import monthly attendance/payroll summary"
+                : importFormat === "daily"
+                  ? "Import HR Portal daily attendance"
+                  : "Import existing attendance CSV"
+            }
+            description="Imports are HR-only. Daily records and monthly summaries are validated and saved separately; imported source hours are never converted or used to recalculate pay."
+            columns={
+              importFormat === "monthly"
+                ? monthlyAttendanceColumns
+                : importFormat === "daily"
+                  ? dailyAttendanceColumns
+                  : legacyAttendanceColumns
+            }
+            requiredHeaderGroups={
+              importFormat === "monthly"
+                ? [
+                    ["employeeId", "employeeCode", "email", "employeeEmail"],
+                    ["Employee"],
+                    ["Email"],
+                    ["Department"],
+                    ...monthlyAttendanceColumns.slice(4).map((column) => [column.header]),
+                  ]
+                : importFormat === "daily"
+                  ? [
+                      ["employeeId", "employeeCode", "email", "employeeEmail"],
+                      ...dailyAttendanceColumns.slice(4).map((column) => [column.header]),
+                    ]
+                  : [
+                      ["employeeId", "employeeCode", "id", "email", "emailId", "employeeEmail"],
+                      ["status", "attendanceStatus", "attendance"],
+                      ["workingHours", "hoursWorked", "hours"],
+                    ]
+            }
+            validateRow={
+              importFormat === "monthly"
+                ? validateMonthlyAttendanceRow
+                : importFormat === "daily"
+                  ? validateDailyAttendanceRow
+                  : validateLegacyAttendanceRow
+            }
+            templateName={
+              importFormat === "monthly"
+                ? "payroll-monthly-summary-template.csv"
+                : importFormat === "daily"
+                  ? "hr-portal-daily-attendance-template.csv"
+                  : "attendance-import-template.csv"
+            }
+            sampleRow={
+              importFormat === "monthly"
+                ? {
+                    employeeId: "EXAMPLE-REMOVE",
+                    employee: "Example Employee",
+                    email: "example@example.test",
+                    department: "Operations",
+                    month: "2026-11",
+                    daysPresent: "5",
+                    totalHours: "37.15",
+                    worked: "37h 8m",
+                    break: "4h 1m",
+                    idle: "0s",
+                    flaggedDays: "0",
+                    fullDays: "0",
+                    halfDays: "0",
+                    otherDays: "0",
+                    otherHours: "0",
+                    basePayUsd: "0",
+                    bonusUsd: "0",
+                    netPayUsd: "0",
+                    daysWithoutRate: "0",
+                    synced: "false",
+                  }
+                : importFormat === "daily"
+                  ? {
+                      employeeId: "EXAMPLE-REMOVE",
+                      email: "example@example.test",
+                      name: "Example Employee",
+                      department: "Operations",
+                      date: "2026-11-06",
+                      day: "Fri",
+                      clockIn: "08:30",
+                      clockOut: "17:00",
+                      status: "Full day",
+                      leave: "",
+                      hours: "8.5",
+                      break: "1",
+                      productive: "7.5",
+                    }
+                  : {
+                      employeeId: "EXAMPLE-REMOVE",
+                      name: "Example Employee",
+                      email: "example@example.test",
+                      department: "Operations",
+                      status: "Present",
+                      workingHours: "8",
+                      totalBreakTime: "1",
+                    }
+            }
+            disabled={isLoading}
+            onImport={importAttendanceContent}
+          />
         </section>
+
+        <div className="flex gap-2">
+          {[
+            ["daily", `Daily records (${attendance.length})`],
+            ["monthly", `Monthly summaries (${monthlySummaries.length})`],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => {
+                setViewMode(mode);
+                setCurrentPage(1);
+              }}
+              className={`rounded-xl px-4 py-2.5 text-sm font-semibold ${viewMode === mode ? "bg-teal-700 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {viewMode === "daily" ? (
+          <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1500px] text-left text-sm">
+                <TableHeader columns={["Employee ID", "Name", "Email", "Department", "Date", "Day", "Clock In", "Clock Out", "Status", "Leave", "Hours (source)", "Break (source)", "Productive (source)"]} />
+                <tbody className="divide-y divide-slate-100 text-center">
+                  {visibleAttendance.length ? visibleAttendance.map((record) => {
+                    const status = record.attendanceStatus || "—";
+                    const tone = /present|full day/i.test(status) ? "bg-emerald-100 text-emerald-700" : /absent|leave/i.test(status) ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700";
+                    const sourceValue = (value) => value || "—";
+                    return (
+                      <tr key={record.id} className="transition hover:bg-slate-50">
+                        <td className="px-4 py-3 text-xs text-slate-600">{record.employeeId || record.id}</td>
+                        <td className="px-4 py-3 text-start font-semibold text-slate-800">{record.name || record.employeeName || "—"}</td>
+                        <td className="px-4 py-3 text-start text-slate-500">{record.email || record.employeeEmail || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{record.department || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{record.date || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{record.day || "—"}</td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{record.clockIn || "—"}</td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{record.clockOut || "—"}</td>
+                        <td className="px-4 py-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>{status}</span></td>
+                        <td className="px-4 py-3 text-slate-600">{record.leave || "—"}</td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{record.recordType === "dailyDetailed" ? sourceValue(record.hoursSource) : record.workingHours === undefined ? "—" : `${record.workingHours}h`}</td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{record.recordType === "dailyDetailed" ? sourceValue(record.breakSource) : record.totalBreakTime === undefined ? "—" : `${record.totalBreakTime}h`}</td>
+                        <td className="px-4 py-3 font-mono text-slate-600">{sourceValue(record.productiveSource)}</td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr><td colSpan="13" className="px-6 py-12 text-center text-sm text-slate-500">
+                      {isLoading ? "Loading attendance records..." : loadError ? "Attendance records could not be loaded." : attendance.length ? "No attendance records match your filters." : "No attendance records have been imported yet."}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-col gap-3 border-t border-slate-100 px-6 py-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+              <span>Page {displayedPage} of {totalPages} · {filteredAttendance.length} records</span>
+              <div className="flex items-center gap-2">
+                <button type="button" disabled={displayedPage === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="rounded-lg px-3 py-2 font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300">← Previous</button>
+                <button type="button" disabled={displayedPage === totalPages} onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} className="rounded-lg px-3 py-2 font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300">Next →</button>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[2100px] text-left text-sm">
+                <TableHeader columns={["Employee ID", "Employee", "Email", "Department", "Month", "Days Present", "Total Hours (source)", "Worked", "Break", "Idle", "Flagged Days", "Full Days", "Half Days", "Other Days", "Other Hours (source)", "Base Pay (USD)", "Bonus (USD)", "Net Pay (USD)", "Days Without Rate", "Synced"]} />
+                <tbody className="divide-y divide-slate-100 text-center">
+                  {filteredMonthlySummaries.length ? filteredMonthlySummaries.map((record) => (
+                    <tr key={record.id} className="transition hover:bg-slate-50">
+                      <td className="px-3 py-3 text-xs text-slate-600">{record.employeeId || record.id}</td>
+                      <td className="px-3 py-3 font-semibold text-slate-800">{record.employeeName || record.name || "—"}</td>
+                      <td className="px-3 py-3 text-slate-500">{record.employeeEmail || record.email || "—"}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.department || "—"}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.month}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.daysPresent}</td>
+                      <td className="px-3 py-3 font-mono text-slate-600">{record.totalHoursSource}</td>
+                      <td className="px-3 py-3 font-mono text-slate-600">{record.worked}</td>
+                      <td className="px-3 py-3 font-mono text-slate-600">{record.breakSource}</td>
+                      <td className="px-3 py-3 font-mono text-slate-600">{record.idle}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.flaggedDays}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.fullDays}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.halfDays}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.otherDays}</td>
+                      <td className="px-3 py-3 font-mono text-slate-600">{record.otherHoursSource}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.basePayUsd}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.bonusUsd}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.netPayUsd}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.daysWithoutRate}</td>
+                      <td className="px-3 py-3 text-slate-600">{record.synced ? "Yes" : "No"}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="20" className="px-6 py-12 text-center text-sm text-slate-500">
+                      {isLoading ? "Loading monthly summaries..." : monthlySummaries.length ? "No monthly summaries match your department filter." : "No monthly summaries have been imported yet."}
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="border-t border-slate-100 px-6 py-4 text-sm text-slate-500">{filteredMonthlySummaries.length} monthly summary record(s). Source hours and USD payroll figures are displayed as imported; no conversion or recalculation is applied.</p>
+          </section>
+        )}
       </div>
     </UserLayout>
   );

@@ -1,4 +1,5 @@
 import * as payrollService from "../services/payrollService.js";
+import { isRecentlyAuthenticated } from "../utils/employeeDirectory.js";
 
 const PERIOD_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -24,6 +25,40 @@ const parseEntry = (body) => {
     return { error: "Full days and half days must be whole numbers" };
   }
   if (entry.fullDays + entry.halfDays > 31) return { error: "Full and half days together cannot exceed 31" };
+  if (body.workbookEnabled === true || body.workbookEnabled === "true") {
+    const workbookFields = [
+      ["basicSalary", "Basic salary", 10_000_000],
+      ["allowance", "Allowance", 10_000_000],
+      ["incentive", "Incentive", 10_000_000],
+      ["noPayLeaveDays", "No-pay leave days", 31],
+      ["missingLeadsHours", "Missing leads hours", 744],
+      ["workingDayDivisor", "Working-day divisor", 366],
+      ["hoursPerDay", "Hours per day", 24],
+    ];
+    for (const [key, label, max] of workbookFields) {
+      if (body[key] === undefined || body[key] === null || String(body[key]).trim() === "") {
+        return { error: `${label} is required` };
+      }
+      const value = Number(body[key]);
+      if (!Number.isFinite(value) || value < 0 || value > max) {
+        return { error: `${label} must be a non-negative number no greater than ${max}` };
+      }
+      entry[key] = Math.round(value * 100) / 100;
+    }
+    if (entry.workingDayDivisor <= 0 || entry.hoursPerDay <= 0) {
+      return { error: "Working-day divisor and hours per day must be greater than zero" };
+    }
+    const currency = String(body.currency || "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) return { error: "Payment currency must be a three-letter ISO code" };
+    const incentiveNetTreatment = String(body.incentiveNetTreatment || "");
+    if (!["include", "exclude", "unconfirmed"].includes(incentiveNetTreatment)) {
+      return { error: "Choose an incentive treatment for net pay" };
+    }
+    entry.currency = currency;
+    entry.incentiveNetTreatment = incentiveNetTreatment;
+  } else {
+    entry.workbookEnabled = false;
+  }
   return { value: entry };
 };
 
@@ -38,7 +73,11 @@ export const listPayroll = async (req, res) => {
     const employees = await payrollService.listPayroll(period);
     return res.json({ success: true, data: { period, employees } });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not load payroll records." : error.message,
+    });
   }
 };
 
@@ -54,7 +93,83 @@ export const saveRecord = async (req, res) => {
     if (!data) return res.status(404).json({ success: false, message: "Employee not found" });
     return res.json({ success: true, data });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not save payroll record." : error.message,
+    });
+  }
+};
+
+export const confirmPayment = async (req, res) => {
+  try {
+    if (req.user.role !== "HR") {
+      return res.status(403).json({ success: false, message: "Only HR can confirm payroll payments." });
+    }
+    const { employeeId, period } = req.params;
+    if (!PERIOD_PATTERN.test(period)) {
+      return res.status(400).json({ success: false, message: "Period must be YYYY-MM" });
+    }
+    const confirmed = req.body?.confirmActualPayment === true;
+    if (!confirmed) {
+      return res.status(400).json({ success: false, message: "Confirm that the external payment actually succeeded." });
+    }
+    const reference = String(req.body?.reference || "").trim();
+    if (reference.length > 120) {
+      return res.status(400).json({ success: false, message: "Payment reference must be 120 characters or fewer." });
+    }
+    const record = await payrollService.confirmPayment({
+      employeeId,
+      period,
+      user: req.user,
+      reference,
+    });
+    return res.json({ success: true, data: record });
+  } catch (error) {
+    const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 500;
+    if (statusCode === 500) console.error("Could not confirm payroll payment.", error);
+    return res.status(statusCode).json({
+      success: false,
+      message: statusCode === 500 ? "Could not confirm payroll payment." : error.message,
+    });
+  }
+};
+
+export const getInternalBankExport = async (req, res) => {
+  if (req.user.role !== "HR") {
+    return res.status(403).json({ success: false, message: "Only HR can prepare bank payment exports." });
+  }
+  if (!isRecentlyAuthenticated(req.user.auth_time, Date.now())) {
+    return res.status(403).json({
+      success: false,
+      code: "REAUTH_REQUIRED",
+      message: "Please confirm your password to prepare an export containing bank account numbers.",
+    });
+  }
+  try {
+    const { period, countryCode } = req.query;
+    if (!PERIOD_PATTERN.test(period || "")) {
+      return res.status(400).json({ success: false, message: "Period must be YYYY-MM" });
+    }
+    if (!["LK", "IN"].includes(countryCode)) {
+      return res.status(400).json({ success: false, message: "Choose Sri Lanka or India." });
+    }
+    const rows = await payrollService.prepareBankExport({ period, countryCode });
+    res.setHeader("Cache-Control", "no-store");
+    return res.json({
+      success: true,
+      data: {
+        period,
+        countryCode,
+        workflow: countryCode === "LK" ? "BOC C Flex Corporate" : "Wise",
+        bankReady: false,
+        label: "INTERNAL DRAFT — NOT BANK-READY",
+        rows,
+      },
+    });
+  } catch (error) {
+    console.error("Could not prepare internal payroll export.", error);
+    return res.status(500).json({ success: false, message: "Could not prepare internal payroll export." });
   }
 };
 

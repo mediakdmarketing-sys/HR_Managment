@@ -1,8 +1,11 @@
 import axios from "axios";
+import { configureApiAuth } from "../config/axiosAuth";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:5000/api";
-const API = `${API_BASE}/attendance`;
+const attendance = axios.create({ baseURL: `${API_BASE}/attendance` });
+configureApiAuth(attendance);
 
-export const getAttendanceRecords = () => axios.get(API);
+export const getAttendanceRecords = () => attendance.get("/");
+export const getMonthlyAttendanceSummaries = () => attendance.get("/monthly");
 export const importAttendanceRecords = (records) =>
-  axios.post(`${API}/import`, { records });
+  attendance.post("/import", { records });

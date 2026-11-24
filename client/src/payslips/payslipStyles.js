@@ -4,10 +4,10 @@ export const PAYSLIP_CSS = `
 .ps-sheet { background: #ffffff; color: #111827; font-family: Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.45; padding: 36px 40px; }
 .ps-sheet * { box-sizing: border-box; }
 .ps-sheet p { margin: 0; }
-.ps-head { display: flex; align-items: center; gap: 16px; padding-bottom: 16px; border-bottom: 2px solid #e5efe0; }
+.ps-head { display: flex; align-items: center; gap: 16px; padding-bottom: 16px; border-bottom: 2px solid var(--ps-brand, #3b7a2f); }
 .ps-logo { width: 84px; height: 64px; object-fit: contain; flex-shrink: 0; }
-.ps-company { font-size: 22px; font-weight: 700; color: #3b7a2f; line-height: 1.2; }
-.ps-company-line { font-size: 13px; font-weight: 700; color: #7cb342; }
+.ps-company { font-size: 22px; font-weight: 700; color: var(--ps-brand, #3b7a2f); line-height: 1.2; }
+.ps-company-line { font-size: 13px; font-weight: 700; color: var(--ps-brand, #7cb342); }
 .ps-title { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin: 22px 0 14px; }
 .ps-title h2 { margin: 0; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; color: #111827; }
 .ps-title-meta { text-align: right; font-size: 13px; color: #4b5563; }
@@ -22,10 +22,13 @@ export const PAYSLIP_CSS = `
 .ps-table .ps-amount { text-align: right; width: 28%; font-variant-numeric: tabular-nums; }
 .ps-earning { font-weight: 600; }
 .ps-rate { display: block; font-size: 12px; font-weight: 400; color: #6b7280; }
-.ps-gross td { background: #f0f7ec; font-size: 15px; font-weight: 700; padding-top: 14px; padding-bottom: 14px; }
+.ps-gross td { background: color-mix(in srgb, var(--ps-brand, #3b7a2f) 10%, white); font-size: 15px; font-weight: 700; padding-top: 14px; padding-bottom: 14px; }
 .ps-gross td:first-child { border-radius: 8px 0 0 8px; }
-.ps-gross td:last-child { border-radius: 0 8px 8px 0; color: #2f6b24; }
-.ps-note { margin-top: 28px; text-align: center; font-size: 11px; color: #9ca3af; }
+.ps-gross td:last-child { border-radius: 0 8px 8px 0; color: var(--ps-brand, #2f6b24); }
+.ps-note { margin-top: 28px; padding-top: 10px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid var(--ps-brand, #e5efe0); }
+.ps-modern .ps-head { border-bottom-width: 4px; padding-bottom: 20px; }
+.ps-minimal .ps-head { border-bottom-width: 1px; }
+.ps-sheet.ps-minimal { padding-top: 28px; }
 @media (max-width: 640px) {
   .ps-sheet { padding: 22px 18px; }
   .ps-employee { grid-template-columns: 1fr; }

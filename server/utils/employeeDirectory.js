@@ -49,13 +49,26 @@ export const EMPLOYEE_CSV_HEADERS = [
   "department",
   "countryOfEmployment",
   "countryCode",
+  "address",
+  "city",
+  "country",
+  "postalCode",
+  "pinCode",
+  "phone",
+  "personalEmail",
+  "dateOfBirth",
+  "nationalId",
   "bankName",
+  "otherBankName",
   "accountHolderName",
   "accountNumber",
   "bankBranch",
+  "bankCode",
   "bankBranchCode",
+  "micrCode",
   "ifscCode",
   "joiningDate",
+  "lastWorkingDate",
   "assignedTeamLead",
   "title",
   "designation",
@@ -150,6 +163,46 @@ export const validateEmployeeInput = (input) => {
   }
 
   const country = normalizeCountry(input);
+  const phone = String(input.phone || "").trim();
+  if (!/^\+?[0-9\s()-]{7,20}$/.test(phone)) {
+    throw employeeError("A valid employee phone number is required.");
+  }
+  const address = String(input.address || "").trim();
+  const city = String(input.city || "").trim();
+  const addressCountry = String(input.country || "").trim();
+  if (!address || address.length > 250) {
+    throw employeeError("Address is required and must be 250 characters or fewer.");
+  }
+  if (!city || city.length > 100) {
+    throw employeeError("City is required and must be 100 characters or fewer.");
+  }
+  if (!addressCountry || addressCountry.length > 100) {
+    throw employeeError("Country is required and must be 100 characters or fewer.");
+  }
+  const postalCode = String(input.postalCode || "").trim();
+  const pinCode = String(input.pinCode || "").trim();
+  if (country.code === "LK" && !/^\d{5}$/.test(postalCode)) {
+    throw employeeError("Enter a valid five-digit Sri Lankan postal code.");
+  }
+  if (country.code === "IN" && !/^\d{6}$/.test(pinCode)) {
+    throw employeeError("Enter a valid six-digit Indian PIN code.");
+  }
+  const designation = String(input.designation || "").trim();
+  if (!designation || designation.length > 100) {
+    throw employeeError("Designation is required and must be 100 characters or fewer.");
+  }
+  const joiningDate = String(input.joiningDate || "").trim();
+  if (!joiningDate || !validIsoDate(joiningDate)) {
+    throw employeeError("Joining date is required and must be a valid YYYY-MM-DD date.");
+  }
+  const personalEmail = normalizeEmployeeEmail(input.personalEmail);
+  if (personalEmail && (personalEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail))) {
+    throw employeeError("Personal email is not valid.");
+  }
+  const dateOfBirth = String(input.dateOfBirth || "").trim();
+  if (dateOfBirth && (!validIsoDate(dateOfBirth) || new Date(`${dateOfBirth}T00:00:00Z`) > new Date())) {
+    throw employeeError("Date of birth is not valid.");
+  }
   const selectedBank = String(input.bankName || "").trim();
   const otherBankName = String(input.otherBankName || "").trim();
   const bankName =
@@ -170,13 +223,21 @@ export const validateEmployeeInput = (input) => {
   }
 
   const bankBranch = String(input.bankBranch || "").trim();
+  const bankCode = String(input.bankCode || "").trim().toUpperCase();
   const bankBranchCode = String(input.bankBranchCode || "").trim().toUpperCase();
+  const micrCode = String(input.micrCode || "").trim().toUpperCase();
   const ifscCode = String(input.ifscCode || "").trim().toUpperCase();
   if (bankBranch.length > 100) {
     throw employeeError("Bank branch must be 100 characters or fewer.");
   }
+  if (bankCode && !/^[A-Z0-9-]{1,20}$/.test(bankCode)) {
+    throw employeeError("Bank code is not valid.");
+  }
   if (bankBranchCode && !/^[A-Z0-9-]{1,20}$/.test(bankBranchCode)) {
     throw employeeError("Bank branch code is not valid.");
+  }
+  if (micrCode && !/^[A-Z0-9-]{1,20}$/.test(micrCode)) {
+    throw employeeError("MICR code is not valid.");
   }
   if (country.code === "IN" && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifscCode)) {
     throw employeeError("A valid 11-character IFSC code is required for India.");
@@ -185,9 +246,9 @@ export const validateEmployeeInput = (input) => {
     throw employeeError("IFSC codes are only used for India; use the Sri Lankan branch fields instead.");
   }
 
-  const joiningDate = String(input.joiningDate || "").trim();
-  if (joiningDate && !validIsoDate(joiningDate)) {
-    throw employeeError("Joining date must be a valid YYYY-MM-DD date.");
+  const lastWorkingDate = String(input.lastWorkingDate || "").trim();
+  if (lastWorkingDate && !validIsoDate(lastWorkingDate)) {
+    throw employeeError("Last working date must be a valid YYYY-MM-DD date.");
   }
 
   return {
@@ -198,16 +259,28 @@ export const validateEmployeeInput = (input) => {
     department,
     countryOfEmployment: country.name,
     countryCode: country.code,
+    address,
+    city,
+    country: addressCountry,
+    postalCode: country.code === "LK" ? postalCode : "",
+    pinCode: country.code === "IN" ? pinCode : "",
+    phone,
+    personalEmail,
+    dateOfBirth,
+    nationalId: String(input.nationalId || "").trim(),
     bankName,
     accountHolderName,
     accountNumber,
     bankBranch,
+    bankCode,
     bankBranchCode,
+    micrCode,
     ifscCode: country.code === "IN" ? ifscCode : "",
     joiningDate,
+    lastWorkingDate,
     assignedTeamLead: String(input.assignedTeamLead || "Not assigned").trim(),
     title: String(input.title || "").trim(),
-    designation: String(input.designation || "").trim(),
+    designation,
   };
 };
 
@@ -219,8 +292,15 @@ const BANK_FIELDS = [
   "accountHolderName",
   "accountNumber",
   "bankBranch",
+  "bankCode",
   "bankBranchCode",
+  "micrCode",
   "ifscCode",
+  "swiftCode",
+  "accountType",
+  "routingCode",
+  "currency",
+  "bankProofStoragePath",
 ];
 
 const sameValue = (left, right) =>
@@ -247,6 +327,10 @@ export const validateEmployeeUpdate = (current, input) => {
     "title",
     "designation",
     "address",
+    "city",
+    "country",
+    "postalCode",
+    "pinCode",
     "nationalId",
     "joiningDate",
     "lastWorkingDate",
@@ -393,8 +477,55 @@ export const validateEmployeeUpdate = (current, input) => {
       throw employeeError("Employee name must be between 2 and 100 characters.");
     }
   }
+  for (const [field, maximum] of [
+    ["address", 250],
+    ["city", 100],
+    ["country", 100],
+    ["postalCode", 12],
+    ["pinCode", 12],
+    ["nationalId", 50],
+    ["designation", 100],
+    ["lastWorkingDate", 10],
+  ]) {
+    if (updates[field] !== undefined) {
+      updates[field] = String(updates[field]).trim();
+      if (updates[field].length > maximum) {
+        throw employeeError(`${field} must be ${maximum} characters or fewer.`);
+      }
+    }
+  }
+  if (updates.phone !== undefined) {
+    updates.phone = String(updates.phone).trim();
+    if (updates.phone && !/^\+?[0-9\s()-]{7,20}$/.test(updates.phone)) {
+      throw employeeError("Phone number is not valid.");
+    }
+  }
+  if (updates.personalEmail !== undefined) {
+    updates.personalEmail = normalizeEmployeeEmail(updates.personalEmail);
+    if (updates.personalEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.personalEmail)) {
+      throw employeeError("Personal email is not valid.");
+    }
+  }
+  if (updates.dateOfBirth !== undefined && updates.dateOfBirth) {
+    const dateOfBirth = String(updates.dateOfBirth).trim();
+    if (!validIsoDate(dateOfBirth) || new Date(`${dateOfBirth}T00:00:00Z`) > new Date()) {
+      throw employeeError("Date of birth is not valid.");
+    }
+    updates.dateOfBirth = dateOfBirth;
+  }
   if (updates.joiningDate && !validIsoDate(updates.joiningDate)) {
     throw employeeError("Joining date must be a valid YYYY-MM-DD date.");
+  }
+  if (updates.lastWorkingDate && !validIsoDate(updates.lastWorkingDate)) {
+    throw employeeError("Last working date must be a valid YYYY-MM-DD date.");
+  }
+  for (const field of ["bankCode", "micrCode"]) {
+    if (updates[field] !== undefined) {
+      updates[field] = String(updates[field]).trim().toUpperCase();
+      if (updates[field] && !/^[A-Z0-9-]{1,20}$/.test(updates[field])) {
+        throw employeeError(`${field} is not valid.`);
+      }
+    }
   }
   return updates;
 };
@@ -498,16 +629,28 @@ const HEADER_ALIASES = {
   email: ["email", "employeeemail", "companyemail"],
   role: ["role", "jobrole"],
   department: ["department", "dept"],
-  countryOfEmployment: ["countryofemployment", "country"],
+  countryOfEmployment: ["countryofemployment"],
   countryCode: ["countrycode"],
+  address: ["address"],
+  city: ["city"],
+  country: ["country", "addresscountry", "residentialcountry"],
+  postalCode: ["postalcode", "postcode"],
+  pinCode: ["pincode"],
+  phone: ["phone", "phonenumber", "mobile"],
+  personalEmail: ["personalemail"],
+  dateOfBirth: ["dateofbirth", "dob"],
+  nationalId: ["nationalid", "nationalidcardno"],
   bankName: ["bankname"],
   otherBankName: ["otherbankname"],
   accountHolderName: ["accountholdername", "bankaccountholder"],
   accountNumber: ["accountnumber", "bankaccountnumber"],
   bankBranch: ["bankbranch", "branch"],
+  bankCode: ["bankcode"],
   bankBranchCode: ["bankbranchcode", "branchcode"],
+  micrCode: ["micrcode", "micr"],
   ifscCode: ["ifsccode", "ifsc"],
   joiningDate: ["joiningdate", "datejoined"],
+  lastWorkingDate: ["lastworkingdate", "lastworkingday"],
   assignedTeamLead: ["assignedteamlead", "teamlead"],
   title: ["title"],
   designation: ["designation"],
@@ -550,6 +693,14 @@ export const parseEmployeeCsv = (csvContent) => {
     "role",
     "department",
     "countryOfEmployment",
+    "address",
+    "city",
+    "country",
+    "postalCode",
+    "pinCode",
+    "phone",
+    "designation",
+    "joiningDate",
     "bankName",
     "accountHolderName",
     "accountNumber",

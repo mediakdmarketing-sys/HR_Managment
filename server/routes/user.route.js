@@ -13,7 +13,12 @@ import {
   getUsers,
   importEmployeesCsv,
   updateUser,
+  listEmployeeDocuments,
+  uploadEmployeeDocument,
+  deleteEmployeeDocument,
+  downloadEmployeeDocument,
 } from "../controllers/user.controller.js";
+import identityDocRoute from "./identityDoc.route.js";
 
 const router = express.Router();
 router.use(authMiddleware, authorize("HR"));
@@ -31,5 +36,14 @@ router.get("/:id/account-number", getAccountNumber);
 router.get("/:id/photo", getProfilePhoto);
 router.patch("/:id", updateUser);
 router.patch("/:id/disable", disableUser);
+
+// Identity Documents
+router.use("/:id/identity", identityDocRoute);
+
+// Personnel Documents
+router.get("/:id/documents", listEmployeeDocuments);
+router.post("/:id/documents", uploadEmployeeDocument);
+router.get("/:id/documents/:docId/download", downloadEmployeeDocument);
+router.delete("/:id/documents/:docId", deleteEmployeeDocument);
 
 export default router;

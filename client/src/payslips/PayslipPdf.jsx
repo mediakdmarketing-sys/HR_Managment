@@ -28,6 +28,12 @@ const styles = StyleSheet.create({
   note: { marginTop: 24, textAlign: "center", fontSize: 8.5, color: "#9ca3af" },
 });
 
+const tint = (hex, opacity = 0.1) => {
+  const value = hex.replace("#", "");
+  const channels = [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16));
+  return `rgba(${channels.join(",")},${opacity})`;
+};
+
 const Field = ({ label, value }) => (
   <View style={styles.field}>
     <Text style={styles.fieldLabel}>{label}</Text>
@@ -37,18 +43,35 @@ const Field = ({ label, value }) => (
 
 const PayslipDocument = ({ payslip, letterhead }) => {
   const { company, logo } = letterhead;
+  const appearance = letterhead.appearance || {};
+  const brand = appearance.themeColor || "#3b7a2f";
+  const breakdown = payslip.workbookBreakdown;
   const contact = [company.phone && `Phone: ${company.phone}`, company.email && `Email: ${company.email}`]
     .filter(Boolean)
     .join(" | ");
   return (
     <Document title={`Payslip ${payslip.payslipNumber} - ${payslip.name}`}>
-      <Page size="A4" style={styles.page}>
-        <View style={styles.head}>
+      <Page
+        size="A4"
+        style={[
+          styles.page,
+          appearance.preset === "minimal" ? { padding: 32 } : appearance.preset === "modern" ? { padding: 34 } : {},
+        ]}
+      >
+        <View
+          style={[
+            styles.head,
+            {
+              borderBottomColor: brand,
+              borderBottomWidth: appearance.headerStyle === "plain" ? 0 : appearance.headerStyle === "accent" ? 4 : 2,
+            },
+          ]}
+        >
           {logo && <Image style={styles.logo} src={`data:${logo.mime};base64,${logo.data}`} />}
           <View>
-            <Text style={styles.company}>{company.name}</Text>
-            {company.address && <Text style={styles.companyLine}>{company.address}</Text>}
-            {contact && <Text style={styles.companyLine}>{contact}</Text>}
+            <Text style={[styles.company, { color: brand }]}>{company.name}</Text>
+            {company.address && <Text style={[styles.companyLine, { color: brand }]}>{company.address}</Text>}
+            {contact && <Text style={[styles.companyLine, { color: brand }]}>{contact}</Text>}
           </View>
         </View>
 
@@ -65,8 +88,12 @@ const PayslipDocument = ({ payslip, letterhead }) => {
           <Field label="Employee ID" value={payslip.id} />
           <Field label="Designation" value={payslip.designation} />
           <Field label="Department" value={payslip.department} />
+          <Field label="Employment country" value={payslip.employmentCountry} />
           <Field label="Company email" value={payslip.email} />
           <Field label="Phone no" value={payslip.phone} />
+          <Field label="Payment currency" value={payslip.paymentCurrency} />
+          <Field label="Payment status" value={payslip.paymentStatus} />
+          <Field label="Attendance" value={payslip.attendanceBreakdown.summaryText} />
         </View>
 
         <View style={styles.table}>
@@ -82,16 +109,54 @@ const PayslipDocument = ({ payslip, letterhead }) => {
                 {row.rate && <Text style={styles.rate}>{row.rate}</Text>}
               </View>
               <Text style={styles.count}>{row.count}</Text>
-              <Text style={styles.amount}>{formatMoney(row.amount)}</Text>
+              <Text style={styles.amount}>{formatMoney(row.amount, payslip.legacyCurrency)}</Text>
             </View>
           ))}
           <View style={[styles.row, styles.total]}>
-            <Text style={styles.label}>Total</Text>
-            <Text style={[styles.amount, styles.totalAmount]}>{formatMoney(payslip.total)}</Text>
+            <Text style={styles.label}>Total (existing day/hour calculation, {payslip.legacyCurrency})</Text>
+            <Text style={[styles.amount, styles.totalAmount, { color: brand }]}>{formatMoney(payslip.total, payslip.legacyCurrency)}</Text>
           </View>
+          {breakdown && (
+            <>
+              <View style={[styles.row, { marginTop: 16 }]}>
+                <Text style={[styles.th, styles.label]}>WORKBOOK SALARY BREAKDOWN</Text>
+                <Text style={[styles.th, styles.amount]}>AMOUNT</Text>
+              </View>
+              {[
+                ["Basic salary", breakdown.basicSalary],
+                ["Allowance", breakdown.allowance],
+                ["Incentive (shown separately)", breakdown.incentive],
+                ["Gross salary (incentive excluded)", breakdown.grossSalary],
+                [`No-pay leave deduction (${breakdown.noPayLeaveDays} day(s))`, breakdown.noPayLeaveDeduction],
+                [`Missing leads deduction (${breakdown.missingLeadsHours} hour(s))`, breakdown.missingLeadsDeduction],
+              ].map(([label, amount]) => (
+                <View key={label} style={styles.row}>
+                  <Text style={styles.label}>{label}</Text>
+                  <Text style={styles.amount}>{formatMoney(amount, payslip.paymentCurrency)}</Text>
+                </View>
+              ))}
+              <View style={[styles.row, styles.total, { backgroundColor: tint(brand) }]}>
+                <Text style={styles.label}>Net pay</Text>
+                <Text style={[styles.amount, styles.totalAmount, { color: brand }]}>
+                  {breakdown.netPay === null ? "Pending HR policy decision" : formatMoney(breakdown.netPay, payslip.paymentCurrency)}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
-        <Text style={styles.note}>This is a computer-generated payslip and does not require a signature.</Text>
+        <Text
+          style={[
+            styles.note,
+            {
+              borderTopWidth: appearance.footerStyle === "plain" ? 0 : 1,
+              borderTopColor: brand,
+              paddingTop: appearance.footerStyle === "plain" ? 0 : 6,
+            },
+          ]}
+        >
+          This is a computer-generated payslip and does not require a signature.
+        </Text>
       </Page>
     </Document>
   );
