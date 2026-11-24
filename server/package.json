@@ -5,8 +5,8 @@
   "main": "functions.js",
   "scripts": {
     "test": "node --test --experimental-test-module-mocks test/*.test.js",
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "node init && node index.js",
+    "dev": "node init && nodemon index.js",
     "migrate:firebase": "node scripts/migrate-postgres-to-firebase.js"
   },
   "keywords": [],

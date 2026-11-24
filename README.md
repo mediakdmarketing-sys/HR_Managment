@@ -1,11 +1,13 @@
 # HRMS – HR Management Portal
 
-A role-based HR management system for KD Marketing Group. Each role gets its own dashboard and sidebar. HR manages employees, leave and letter templates. Employees request leave and track their requests.
+A role-based HR management system for KD Marketing Group. Each role gets its own dashboard and sidebar. HR manages employees, attendance, leave, payroll, documents, letters and recruitment. Employees request leave and track their requests.
 
 - **Frontend:** React 19 + Vite + Tailwind CSS (`client/`), deployed on **Vercel**
 - **Backend:** Node.js + Express 5 (`server/`), deployed on **Render**
 - **Database & auth:** Firebase Authentication (email/password) + Cloud Firestore
+- **Files:** Firebase Storage (recruitment CVs and documents), accessed only through the backend
 - **Letters:** offer and service letters generated as PDF in the browser with `@react-pdf/renderer`
+- **Recruitment email:** IMAP (`imapflow`) for incoming applications, SMTP (`nodemailer`) for replies
 
 ---
 
@@ -24,7 +26,12 @@ A role-based HR management system for KD Marketing Group. Each role gets its own
 | **Passwords** | **Forgot password** on the login page emails a reset link that opens `/reset-password` to choose a new password. The server sends this email through your own email account (SMTP settings below), because Firebase doesn't let this project change where its own reset links go. Without SMTP settings it falls back to Firebase's email and Firebase's reset page. Logged-in users change their password from their profile page (current password required). |
 | **My profile** | Clicking your name at the bottom of the sidebar opens `/profile`: upload, change or remove a profile photo (cropped to a square and shrunk in the browser), see your name, company email and personal email (read-only; HR changes them), and change your password. The photo also shows in the sidebar and on the dashboard. |
 | **HR AI assistant** (HR) | Chat button at the bottom right of every page. Answers questions about employees, leave, expenses and payroll, and explains how to use the portal, using Google Gemini (free tier). Each question sends Gemini a summary of the current data, which leaves out bank details, national IDs, addresses, phone numbers, personal emails and leave reasons. It can't change data. |
-| **Attendance** | Uses mock data for now. |
+| **Employee directory & import** (HR) | HR-only directory with search, employee details and edit pages, and validated CSV bulk import. |
+| **Attendance** | HR imports attendance CSV files; rows are validated and stored in Firestore. |
+| **Employee documents & work reports** | Identity documents and work reports per employee, with HR-only access to sensitive details. |
+| **Recruitment** (HR) | Jobs, candidates, applications, interviews, AI CV screening (Groq), candidate chat, bulk email/SMS (SMS via GoHighLevel) and send history. CVs (PDF, DOCX, TXT) are stored in Firebase Storage. |
+| **Recruitment email** (HR) | The recruitment mailbox is polled over IMAP (TLS required). Recruitment emails appear in **Mail Inbox**; an email with a CV that names an open job creates the candidate and application automatically. Emails without a valid CV stay in *Needs Review*. HR replies from the Mail Inbox through the saved SMTP account. Mailbox passwords are stored encrypted and are never returned by the API. |
+| **Hiring Alerts** | Every new application, from email or created manually, creates one alert. Alerts appear in Recruitment → Hiring Alerts and in the main Notifications page (HR only); read state is shared. |
 | **Payroll & payslips** (HR, Finance) | Pick a month, then for each employee: **Add/Edit** the full days, half days and lagging hours (count × editable rate: defaults LKR 1,000 / 500 / 100) plus a monthly increment. Rates and the increment carry over to the following months. **View & print** shows the payslip with the letterhead. **WhatsApp** opens a WhatsApp Web chat with the employee (from the phone number in their profile) with a short message containing a private link to the payslip PDF (valid 30 days; a new link replaces the old one). Payslip numbers look like `999DI4821`: company code, first 2 letters of the department, and 4 random digits that are unique within the department. |
 
 ### Leave approval routing
@@ -54,13 +61,18 @@ HR_Portal/
 │   ├── src/layouts/        UserLayout (notification polling)
 │   ├── src/api/            Axios API clients
 │   ├── src/letters/        offer & service letter content and PDF layout
-│   ├── src/utils/          auth, session and theme helpers
+│   ├── src/navigation/     recruitment routes and per-page data mapping
+│   ├── src/utils/          auth, session, CSV and theme helpers
+│   ├── test/               unit tests (node:test)
+│   ├── tests/              Playwright end-to-end tests
 │   └── vercel.json         SPA rewrite so deep links work on refresh
 └── server/                 Express API (Render)
     ├── routes/ controllers/ services/
-    ├── middleware/         Firebase token auth, role checks
-    ├── config/firebase.js  Firebase Admin SDK setup
-    └── database/init.js    Seeds demo employees into Firebase on startup
+    ├── middleware/         Firebase token auth, role checks, rate limits
+    ├── utils/              validation, mail security, credential encryption, startup
+    ├── config/firebase.js  Firebase Admin SDK setup (Firestore, Auth, Storage)
+    ├── database/init.js    Verifies Firestore connectivity on startup
+    └── test/               automated tests (node:test, in-memory fakes, no network)
 ```
 
 ### Where data is stored (Firestore)
@@ -78,6 +90,9 @@ HR_Portal/
 | `profilePhotos` | Profile photos (document ID = employee ID) |
 | `settings/banks` | Bank names typed under "Others", shown in the bank dropdown afterwards |
 | `settings/letterLogo`, `settings/letterSignature`, `settings/letterCompany` | Letterhead logo, authorised signature and company details used in letters |
+| `recruitment*` | Recruitment data: jobs, candidates, applications, resumes, AI results, interviews, messages, email inbox, notifications (Hiring Alerts), settings (mailbox settings with encrypted passwords) and unique-key reservations |
+
+Firestore and Storage security rules (`firestore.rules`, `storage.rules`) deny direct client access; all data goes through the backend.
 
 > Ticket-related files (`ticket.*`) are left over from an earlier project and are not used.
 
@@ -93,8 +108,9 @@ HR_Portal/
    The Firebase CLI default in `.firebaserc` is also `hrms-65efa`. Run `firebase use` to confirm the active project before any CLI command.
 2. **Build → Authentication → Get started**, then enable **Email/Password**.
 3. **Build → Firestore Database**: create a database.
-4. **Project settings → Service accounts → Generate new private key.** This downloads a JSON file with the backend credentials. Never commit it.
-5. **Project settings → General → Your apps**: add a **Web app** and copy its config values (for the frontend).
+4. **Build → Storage**: create the default bucket (for example `<project-id>.firebasestorage.app`). Recruitment CV uploads fail until the bucket exists.
+5. **Project settings → Service accounts → Generate new private key.** This downloads a JSON file with the backend credentials. Keep it outside the repository and never commit it.
+6. **Project settings → General → Your apps**: add a **Web app** and copy its config values (for the frontend).
 
 
 ### 2. Backend
@@ -120,9 +136,15 @@ npm run dev               # http://localhost:5000 (restarts automatically on fil
 | `FIREBASE_PROJECT_ID` | `project_id` from the service-account JSON |
 | `FIREBASE_CLIENT_EMAIL` | `client_email` from the service-account JSON |
 | `FIREBASE_PRIVATE_KEY` | `private_key` from the service-account JSON, in quotes, with `\n` line breaks |
-| `FIREBASE_STORAGE_BUCKET` | `<project-id>.firebasestorage.app`. Required at startup, even though new attachments are stored in Firestore. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Alternative to the three variables above: the path to the service-account JSON file, stored **outside** the repository. |
+| `FIREBASE_STORAGE_BUCKET` | Name of the Storage bucket, e.g. `<project-id>.firebasestorage.app` (no `gs://`). Used for recruitment CVs and documents. |
+| `RECRUITMENT_CREDENTIALS_KEY` | Required to save recruitment mailbox passwords (they are encrypted with it). 32 random bytes: `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`. Use one key per environment, keep it secret and backed up, and **restart the server after changing it**. |
+| `GROQ_API_KEY`, `GROQ_MODEL` | Optional. AI CV screening in Recruitment. |
+| `GHL_TOKEN`, `GHL_LOCATION_ID` | Optional. GoHighLevel credentials for candidate SMS. |
+| `RECRUITMENT_EMAIL_HOST`, `RECRUITMENT_EMAIL_PORT`, `RECRUITMENT_EMAIL_USER`, `RECRUITMENT_EMAIL_PASSWORD` | Optional fallback for the recruitment mailbox. Normally the IMAP/SMTP settings are entered in **Recruitment → Email Settings** and stored encrypted. |
+| `RECRUITMENT_EMAIL_POLL_INTERVAL`, `RECRUITMENT_EMAIL_SINCE_DAYS`, `RECRUITMENT_EMAIL_ENABLED` | Optional. Poll interval in ms (default 60000), how many days back to read (default 2), and `false` to turn polling off. |
 
-On first start, the server creates the demo employees from `server/mockEmployees.js` in Firebase Auth and Firestore if they don't exist yet.
+Run **one** backend instance per mailbox. Mailbox polling starts only after the server has bound its port; a second instance on the same port exits instead of polling.
 
 ### 3. Frontend
 
@@ -140,6 +162,17 @@ npm run dev               # http://localhost:5173
 | `VITE_SESSION_HOURS` | Optional. Maximum login session length in hours (default `12`). |
 
 > Vite reads `.env` only when it starts. Restart `npm run dev` after changing it.
+
+### 4. Tests
+
+```bash
+cd server && npm test                  # backend: node:test with in-memory Firestore and fake mail servers
+cd client && node --test test/*.test.js  # frontend unit tests
+cd client && npm run build             # production build
+cd client && npm test                  # Playwright end-to-end tests (starts the dev server; needs a configured app)
+```
+
+The backend tests never contact real mail servers, send email or touch real Firestore data. The TLS tests generate a temporary certificate with `openssl` and are skipped if it is not installed.
 
 ---
 
@@ -160,7 +193,7 @@ Do the steps in this order. The frontend needs the backend URL, and the backend 
    | Start Command | `npm start` |
    | Health Check Path | `/api/health` |
 
-3. **Environment variables**: add `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` and `FIREBASE_STORAGE_BUCKET`. For `FIREBASE_PRIVATE_KEY`, paste the whole key, including the `-----BEGIN/END PRIVATE KEY-----` lines. Either real line breaks or `\n` work. Don't set `PORT`; Render provides it.
+3. **Environment variables**: add `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_STORAGE_BUCKET` and `RECRUITMENT_CREDENTIALS_KEY` (plus any optional keys you use). For `FIREBASE_PRIVATE_KEY`, paste the whole key, including the `-----BEGIN/END PRIVATE KEY-----` lines. Either real line breaks or `\n` work. Don't set `PORT`; Render provides it.
 4. Deploy, then open `https://<your-service>.onrender.com/api/health`. It should return `{"success":true}`.
 
 > On Render's free plan, the service sleeps after about 15 minutes without traffic. The first request after that can take about a minute.
@@ -206,9 +239,10 @@ If you add a custom domain later, add it in the same places.
 
 ## Security notes
 
-- **Never commit `.env` files or the service-account JSON.** They are listed in `.gitignore`. Use `.env.example` for placeholders.
+- **Never commit `.env` files or the service-account JSON.** They are listed in `.gitignore`. Use `.env.example` for placeholders; a test fails if a secret value is ever added to `server/.env.example`.
 - The service-account private key was pushed to GitHub in an earlier commit. Replace it: in **Firebase → Project settings → Service accounts**, generate a new key. Then go to **Google Cloud → IAM & Admin → Service accounts → firebase-adminsdk → Keys** and delete the old one.
-- Demo employees have known passwords from `mockEmployees.js`. Change them, or disable those accounts, before real use.
+- Recruitment mailbox passwords are encrypted at rest (AES-256-GCM) with `RECRUITMENT_CREDENTIALS_KEY`, used only with the exact saved host, port, TLS mode and user, sent only over TLS with certificate verification, and removed from API responses and logs.
+- Review dependency and build-script changes before running `npm run dev`, `npm run build` or `npm start` from any branch you did not create.
 
 ### Backups (read-only)
 
@@ -216,6 +250,6 @@ If you add a custom domain later, add it in the same places.
 
 ## Known limitations / next steps
 
-- Attendance uses mock data.
+- Recruitment job matching relies on the email subject naming an open job (e.g. "Application for Junior Software Developer"); otherwise the CV is kept for manual assignment.
 - The AI assistant uses Gemini's free tier: small daily limits, and Google may use free-tier prompts to improve its products. Use a paid key for production.
 - WhatsApp Web links cannot attach files, so the message carries a link to the PDF instead. Sending the PDF itself as an attachment would need the WhatsApp Business API.

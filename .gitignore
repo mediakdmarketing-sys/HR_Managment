@@ -1,5 +1,4 @@
 node_modules
-.env
 *.env
 !.env.example
 dist
@@ -19,3 +18,38 @@ reference-files
 .playwright-mcp/
 client/test-results/
 playwright-report/
+
+# Internal documentation, reports, QA evidence and screenshots (kept locally only)
+/*.md
+!/README.md
+/*.txt
+/*.png
+/QA_EVIDENCE/
+/docs/
+client/README.md
+
+# Local IDE and assistant tooling
+.claude/
+.kiro/
+
+# Ad-hoc local scripts and diagnostics (not part of the application)
+/package.json
+/package-lock.json
+/test-*.js
+/test-*.mjs
+client/public/test-api.html
+client/test/email-integration.test.js
+server/check_email_config.js
+server/debug_email_sync.js
+server/test-smtp-integration.js
+server/mockEmployees.js
+
+# Unused Vite template assets and sample data (not referenced by the app)
+client/src/assets/hero.png
+client/src/assets/icon.png
+client/src/assets/react.svg
+client/src/assets/vite.svg
+client/src/assets/sampleAttendance.csv
+client/public/favicon.svg
+client/public/icons.svg
+config.bat
